@@ -70,13 +70,8 @@ const gptOrigins = [
 await app.register(fastifyCors, {
   origin: (origin, cb) => {
     // No origin: server-to-server (curl, Postman, GPT Actions).
-    // /oauth/token is a server-to-server call from ChatGPT — allow it without origin.
-    // All other no-origin requests (e.g. cookie-based) are rejected.
-    if (!origin) {
-      const url = req.raw?.url ?? ''
-      if (url === '/oauth/token' || url.startsWith('/oauth/token?')) return cb(null, true)
-      return cb(null, false)
-    }
+    // These can't use cookies, so API key / OAuth token auth protects them.
+    if (!origin) return cb(null, true)
     if (browserOrigins.includes(origin) || gptOrigins.includes(origin)) {
       return cb(null, true)
     }

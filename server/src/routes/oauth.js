@@ -84,14 +84,7 @@ export default async function oauthRoutes(app) {
   })
 
   // POST /oauth/token — ChatGPT server exchanges code for an access token
-  app.post('/token', {
-    ...rateLimitConfig,
-    // Allow no-origin server-to-server requests from ChatGPT
-    config: {
-      ...rateLimitConfig.config,
-      skipCors: true,
-    },
-  }, async (req, reply) => {
+  app.post('/token', rateLimitConfig, async (req, reply) => {
     // Accept both JSON and form-encoded bodies
     const body = req.body ?? {}
     const { grant_type, code, client_id, client_secret, redirect_uri } = body
