@@ -23,6 +23,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        navigateFallbackDenylist: [/^\/oauth-login/, /^\/oauth/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/images\.ctfassets\.net\/.*/i,
