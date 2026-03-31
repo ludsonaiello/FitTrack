@@ -4,16 +4,19 @@ import { randomBytes, createHash } from 'crypto'
 const isProd = process.env.NODE_ENV === 'production'
 
 /** Access token: 15 minutes */
-const ACCESS_TTL_SEC  = 60 * 15
-/** Refresh token: 7 days */
-const REFRESH_TTL_SEC = 60 * 60 * 24 * 7
+const ACCESS_TTL_SEC        = 60 * 15
+/** Refresh token: 7 days (default) */
+const REFRESH_TTL_SEC       = 60 * 60 * 24 * 7
+/** Refresh token: 90 days (remember me) */
+const REFRESH_TTL_LONG_SEC  = 60 * 60 * 24 * 90
 
 /** Generate a raw refresh token, its SHA-256 hash, and its expiry Date */
-function makeRefreshToken() {
+function makeRefreshToken(rememberMe = false) {
+  const ttl      = rememberMe ? REFRESH_TTL_LONG_SEC : REFRESH_TTL_SEC
   const raw      = randomBytes(40).toString('hex')               // 80-char hex
   const hash     = createHash('sha256').update(raw).digest('hex')
-  const expiresAt = new Date(Date.now() + REFRESH_TTL_SEC * 1000)
-  return { raw, hash, expiresAt }
+  const expiresAt = new Date(Date.now() + ttl * 1000)
+  return { raw, hash, expiresAt, ttl }
 }
 
 /**
@@ -21,7 +24,7 @@ function makeRefreshToken() {
  * Access token goes to path='/' (readable by all API routes).
  * Refresh token is scoped to /api/auth/refresh only.
  */
-function setAuthCookies(reply, accessToken, refreshRaw) {
+function setAuthCookies(reply, accessToken, refreshRaw, refreshTtlSec = REFRESH_TTL_SEC) {
   reply
     .setCookie('token', accessToken, {
       httpOnly: true,
@@ -35,7 +38,7 @@ function setAuthCookies(reply, accessToken, refreshRaw) {
       sameSite: 'lax',
       secure: isProd,
       path: '/api/auth',      // scoped — browser only sends on /api/auth/* requests
-      maxAge: REFRESH_TTL_SEC,
+      maxAge: refreshTtlSec,
     })
 }
 
@@ -78,10 +81,10 @@ export default async function authRoutes(app) {
       })
 
       const accessToken    = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
-      const { raw, hash, expiresAt } = makeRefreshToken()
+      const { raw, hash, expiresAt, ttl } = makeRefreshToken(false)
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: hash, expiresAt } })
 
-      setAuthCookies(reply, accessToken, raw)
+      setAuthCookies(reply, accessToken, raw, ttl)
       return reply.status(201).send({ success: true, data: user })
     } catch (e) {
       app.log.error(e)
@@ -97,14 +100,15 @@ export default async function authRoutes(app) {
         type: 'object',
         required: ['email', 'password'],
         properties: {
-          email:    { type: 'string', maxLength: 254 },
-          password: { type: 'string', maxLength: 128 },
+          email:      { type: 'string', maxLength: 254 },
+          password:   { type: 'string', maxLength: 128 },
+          rememberMe: { type: 'boolean', default: false },
         },
         additionalProperties: false,
       },
     },
   }, async (req, reply) => {
-    const { email, password } = req.body
+    const { email, password, rememberMe = false } = req.body
     try {
       const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
       // Constant-time comparison even on miss to prevent user enumeration
@@ -118,10 +122,10 @@ export default async function authRoutes(app) {
       await prisma.refreshToken.deleteMany({ where: { userId: user.id } })
 
       const accessToken = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
-      const { raw, hash: rtHash, expiresAt } = makeRefreshToken()
+      const { raw, hash: rtHash, expiresAt, ttl } = makeRefreshToken(rememberMe)
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: rtHash, expiresAt } })
 
-      setAuthCookies(reply, accessToken, raw)
+      setAuthCookies(reply, accessToken, raw, ttl)
       return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
     } catch (e) {
       app.log.error(e)

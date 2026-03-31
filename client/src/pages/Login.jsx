@@ -9,6 +9,7 @@ export default function Login() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +31,7 @@ export default function Login() {
     setLoading(true)
     try {
       if (mode === 'login') {
-        await login(email.trim().toLowerCase(), password)
+        await login(email.trim().toLowerCase(), password, rememberMe)
       } else {
         await register(name.trim(), email.trim().toLowerCase(), password)
       }
@@ -146,6 +147,34 @@ export default function Login() {
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           disabled={loading}
         />
+
+        {mode === 'login' && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            cursor: 'pointer', userSelect: 'none',
+            padding: '2px 0',
+          }}>
+            <div
+              onClick={() => setRememberMe(v => !v)}
+              style={{
+                width: 20, height: 20, borderRadius: 5, flexShrink: 0,
+                border: `2px solid ${rememberMe ? 'var(--accent)' : 'var(--border2)'}`,
+                background: rememberMe ? 'var(--accent)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+            >
+              {rememberMe && (
+                <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                  <path d="M1 4L4 7.5L10 1" stroke="#0a0a0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </div>
+            <span style={{ fontSize: '0.88rem', color: 'var(--text2)' }}>
+              Keep me signed in
+            </span>
+          </label>
+        )}
 
         {error && (
           <div style={{

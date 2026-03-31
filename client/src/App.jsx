@@ -105,6 +105,7 @@ function AuthenticatedApp() {
       localStorage.removeItem('ft_onboarded')
       localStorage.removeItem('ft_name')
       localStorage.removeItem('ft_weight_unit')
+      localStorage.removeItem('ft_user_cache')
     }
     localStorage.setItem('ft_user_id', user.id)
   }, [user.id])
