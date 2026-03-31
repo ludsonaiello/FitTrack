@@ -16,6 +16,21 @@ export default async function gptRoutes(app) {
   // All routes below require API key auth
   const auth = { preHandler: [apiKeyAuth] }
 
+  // ── GET /api/gpt/meta ────────────────────────────────────────────────────
+  app.get('/meta', auth, async (req) => {
+    const [equipmentRows, focusRows] = await Promise.all([
+      app.prisma.$queryRaw`SELECT DISTINCT unnest("equipment") AS value FROM "Exercise" ORDER BY value`,
+      app.prisma.$queryRaw`SELECT DISTINCT unnest("focusArea") AS value FROM "Exercise" ORDER BY value`,
+    ])
+    return {
+      success: true,
+      data: {
+        equipment: equipmentRows.map(r => r.value),
+        focusArea: focusRows.map(r => r.value),
+      },
+    }
+  })
+
   // ── GET /api/gpt/profile ──────────────────────────────────────────────────
   app.get('/profile', auth, async (req) => {
     const userId = req.user.id
