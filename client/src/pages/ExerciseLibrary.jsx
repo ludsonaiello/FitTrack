@@ -4,7 +4,6 @@ import { Search, X } from 'lucide-react'
 import { filterExercises, EQUIPMENT_LABELS, FOCUS_LABELS, LEVEL_LABELS, exImageUrl } from '../lib/exercises.js'
 import { useExercises } from '../hooks/useExercises.js'
 import { addExerciseToDay } from '../db/index.js'
-import { BASE } from '../lib/api.js'
 
 const FOCUSES = Object.keys(FOCUS_LABELS)
 const EQUIPMENTS = Object.keys(EQUIPMENT_LABELS)
@@ -19,18 +18,17 @@ const REST_CHIPS = [
   { v: 180, l: '3min' },
 ]
 
-function resolveExImage(ex) {
-  if (ex.imageUrl) return ex.imageUrl  // /images/... is same-origin; http(s):// is external
-  return exImageUrl(ex.id)
-}
-
 function ExCard({ ex, onClick, onSelect }) {
   const handler = onSelect ?? onClick
+  const [imgSrc, setImgSrc] = useState(() => exImageUrl(ex.id))
+  function handleImgError() {
+    if (ex.imageUrl && imgSrc !== ex.imageUrl) setImgSrc(ex.imageUrl)
+    else setImgSrc(null)
+  }
   return (
     <div className="ex-card" onClick={() => handler(ex)} style={{ marginBottom: 10 }}>
-      <img src={resolveExImage(ex)} alt={ex.name} loading="lazy"
-        style={{ width: 80, height: 80, objectFit: 'cover', flexShrink: 0, background: 'var(--surface2)' }}
-        onError={e => e.target.style.display = 'none'} />
+      {imgSrc && <img src={imgSrc} alt={ex.name} loading="lazy" onError={handleImgError}
+        style={{ width: 80, height: 80, objectFit: 'cover', flexShrink: 0, background: 'var(--surface2)' }} />}
       <div style={{ padding: '10px 12px 10px 0', flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.05rem', lineHeight: 1.2, marginBottom: 4 }}>{ex.name}</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

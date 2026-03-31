@@ -7,11 +7,6 @@ import { getExerciseHistory, getExercisePlans, getExerciseSessionHistory } from 
 import { getWeightUnit, toDisplay } from '../hooks/useWeightUnit.js'
 import { BASE } from '../lib/api.js'
 
-function resolveUrl(url) {
-  if (!url) return null
-  return url  // /images/... and /videos/... are same-origin static assets
-}
-
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const SECTION_LABEL = {
@@ -201,9 +196,13 @@ export default function ExerciseDetail() {
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [ex, setEx] = useState(() => getExerciseById(decodeURIComponent(id)))
-  const [loading, setLoading] = useState(!ex)
+  const initialEx = getExerciseById(decodeURIComponent(id))
+  const [ex, setEx] = useState(() => initialEx)
+  const [loading, setLoading] = useState(!initialEx)
   const [notFound, setNotFound] = useState(false)
+  // Always try the local static asset first; fall back to the DB url only if the file is missing
+  const [imgSrc, setImgSrc] = useState(() => initialEx ? exImageUrl(initialEx.id) : null)
+  const [vidSrc, setVidSrc] = useState(() => initialEx ? exVideoUrl(initialEx.id) : null)
 
   useEffect(() => {
     if (ex) return
@@ -211,8 +210,13 @@ export default function ExerciseDetail() {
     fetch(`${BASE}/api/exercises/${encodeURIComponent(decoded)}`, { credentials: 'include' })
       .then(r => r.json())
       .then(json => {
-        if (json.success) setEx(json.data)
-        else setNotFound(true)
+        if (json.success) {
+          setEx(json.data)
+          setImgSrc(exImageUrl(json.data.id))
+          setVidSrc(exVideoUrl(json.data.id))
+        } else {
+          setNotFound(true)
+        }
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
@@ -232,8 +236,12 @@ export default function ExerciseDetail() {
     </div>
   )
 
-  const localImage = resolveUrl(ex.imageUrl) || exImageUrl(ex.id)
-  const localVideo = resolveUrl(ex.mediaUrl) || exVideoUrl(ex.id)
+  function handleImgError() {
+    if (ex.imageUrl && imgSrc !== ex.imageUrl) setImgSrc(ex.imageUrl)
+  }
+  function handleVidError() {
+    if (ex.mediaUrl && vidSrc !== ex.mediaUrl) { setVidSrc(ex.mediaUrl); setPlaying(false) }
+  }
 
   function togglePlay() {
     const v = videoRef.current
@@ -256,8 +264,8 @@ export default function ExerciseDetail() {
 
         <video
           ref={videoRef}
-          src={localVideo}
-          poster={localImage}
+          src={vidSrc}
+          poster={imgSrc}
           playsInline
           loop
           onTimeUpdate={() => {
@@ -265,6 +273,7 @@ export default function ExerciseDetail() {
             if (v && v.duration) setProgress(v.currentTime / v.duration)
           }}
           onEnded={() => setPlaying(false)}
+          onError={handleVidError}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
 
