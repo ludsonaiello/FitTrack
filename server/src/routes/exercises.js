@@ -22,6 +22,19 @@ const querySchema = {
  * @param {import('fastify').FastifyInstance} app
  */
 export default async function exerciseRoutes(app) {
+  app.get('/exercises/:id', {}, async (request, reply) => {
+    const exercise = await prisma.exercise.findUnique({
+      where: { id: request.params.id },
+      select: {
+        id: true, name: true, type: true,
+        experienceLevel: true, equipment: true, focusArea: true,
+        imageUrl: true, mediaUrl: true, tips: true,
+      },
+    })
+    if (!exercise) return reply.status(404).send({ success: false, error: 'Exercise not found' })
+    return { success: true, data: exercise }
+  })
+
   app.get(
     '/exercises',
     {

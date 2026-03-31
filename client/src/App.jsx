@@ -15,6 +15,13 @@ import Profile from './pages/Profile'
 import Login from './pages/Login'
 import SessionDetail from './pages/SessionDetail'
 import Sessions from './pages/Sessions'
+import Admin from './pages/Admin'
+
+function AdminGuard() {
+  const { user } = useAuth()
+  if (!user?.isAdmin) return <Navigate to="/" replace />
+  return <Admin />
+}
 
 function BottomNav({ syncStats, syncRetry }) {
   const loc = useLocation()
@@ -70,6 +77,7 @@ function AuthenticatedApp() {
         <Route path="/workout/sessions"           element={<Sessions />} />
         <Route path="/progress"                  element={<Progress />} />
         <Route path="/profile"                   element={<Profile />} />
+        <Route path="/admin"                     element={<AdminGuard />} />
         {/* Redirect /login → / when already signed in */}
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*"      element={<Navigate to="/" replace />} />

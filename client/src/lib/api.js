@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+export const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 // ── Refresh mutex ─────────────────────────────────────────────────────────────
 // Ensures only one refresh attempt is in-flight at a time.
@@ -65,4 +65,36 @@ export const api = {
   post:   (path, body)  => request('POST',   path, body),
   patch:  (path, body)  => request('PATCH',  path, body),
   delete: (path)        => request('DELETE', path),
+}
+
+async function uploadRequest(path, formData, isRetry = false) {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+
+  if (res.status === 401 && !isRetry) {
+    try {
+      await attemptRefresh()
+      return uploadRequest(path, formData, true)
+    } catch {
+      const json = await res.json().catch(() => ({ error: 'Unauthorized' }))
+      const err = new Error(json.error ?? 'Unauthorized')
+      err.status = 401
+      throw err
+    }
+  }
+
+  const json = await res.json().catch(() => ({ error: res.statusText }))
+  if (!res.ok) {
+    const err = new Error(json.error ?? res.statusText)
+    err.status = res.status
+    throw err
+  }
+  return json
+}
+
+export function apiUpload(path, formData) {
+  return uploadRequest(path, formData)
 }

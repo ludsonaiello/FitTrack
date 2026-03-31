@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Plus, ExternalLink } from 'lucide-react'
+import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Plus, ExternalLink, Shield } from 'lucide-react'
 import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { enqueue } from '../db/sync-queue.js'
 
@@ -14,6 +15,7 @@ const GOAL_TYPES = [
 
 export default function Profile() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [weightUnit, setWeightUnit] = useWeightUnit()
   const [name, setName] = useState(() => user?.name || localStorage.getItem('ft_name') || '')
   const [goals, setGoals] = useState([])
@@ -138,9 +140,16 @@ export default function Profile() {
       )}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
         <h1 style={{margin:0}}>Profile &<br/><span style={{color:'var(--accent)'}}>Settings</span></h1>
-        <button className="btn btn-ghost" style={{padding:'8px 12px',fontSize:'0.85rem',gap:6}} onClick={logout}>
-          <LogOut size={15}/> Sign out
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          {user?.isAdmin && (
+            <button className="btn btn-ghost" style={{padding:'8px 12px',fontSize:'0.85rem',gap:6,color:'var(--accent)'}} onClick={() => navigate('/admin')}>
+              <Shield size={15}/> Admin
+            </button>
+          )}
+          <button className="btn btn-ghost" style={{padding:'8px 12px',fontSize:'0.85rem',gap:6}} onClick={logout}>
+            <LogOut size={15}/> Sign out
+          </button>
+        </div>
       </div>
 
       {/* Name */}

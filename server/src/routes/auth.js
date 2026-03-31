@@ -74,10 +74,10 @@ export default async function authRoutes(app) {
       const passwordHash = await bcrypt.hash(password, 12)
       const user = await prisma.user.create({
         data: { email: email.toLowerCase(), passwordHash, name },
-        select: { id: true, email: true, name: true, createdAt: true },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true },
       })
 
-      const accessToken    = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+      const accessToken    = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
       const { raw, hash, expiresAt } = makeRefreshToken()
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: hash, expiresAt } })
 
@@ -117,12 +117,12 @@ export default async function authRoutes(app) {
       // Invalidate all existing sessions for this user before issuing a new one
       await prisma.refreshToken.deleteMany({ where: { userId: user.id } })
 
-      const accessToken = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+      const accessToken = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
       const { raw, hash: rtHash, expiresAt } = makeRefreshToken()
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: rtHash, expiresAt } })
 
       setAuthCookies(reply, accessToken, raw)
-      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name } })
+      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
     } catch (e) {
       app.log.error(e)
       return reply.status(500).send({ success: false, error: 'Login failed. Please try again.' })
@@ -145,7 +145,7 @@ export default async function authRoutes(app) {
     try {
       const stored = await prisma.refreshToken.findUnique({
         where: { tokenHash },
-        include: { user: { select: { id: true, email: true, name: true } } },
+        include: { user: { select: { id: true, email: true, name: true, isAdmin: true } } },
       })
 
       if (!stored || stored.expiresAt < new Date()) {
@@ -162,10 +162,10 @@ export default async function authRoutes(app) {
         prisma.refreshToken.create({ data: { userId: user.id, tokenHash: newHash, expiresAt: newExpiry } }),
       ])
 
-      const newAccessToken = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+      const newAccessToken = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
 
       setAuthCookies(reply, newAccessToken, newRaw)
-      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name } })
+      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
     } catch (e) {
       app.log.error(e)
       return reply.status(500).send({ success: false, error: 'Token refresh failed.' })
@@ -190,7 +190,7 @@ export default async function authRoutes(app) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: req.user.sub },
-        select: { id: true, email: true, name: true, createdAt: true },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true },
       })
       if (!user) {
         clearAuthCookies(reply)

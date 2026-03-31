@@ -5,6 +5,12 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { getExerciseById, EQUIPMENT_LABELS, FOCUS_LABELS, LEVEL_LABELS, exImageUrl, exVideoUrl } from '../lib/exercises.js'
 import { getExerciseHistory, getExercisePlans, getExerciseSessionHistory } from '../db/index.js'
 import { getWeightUnit, toDisplay } from '../hooks/useWeightUnit.js'
+import { BASE } from '../lib/api.js'
+
+function resolveUrl(url) {
+  if (!url) return null
+  return url  // /images/... and /videos/... are same-origin static assets
+}
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -195,17 +201,39 @@ export default function ExerciseDetail() {
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
-  const ex = getExerciseById(decodeURIComponent(id))
+  const [ex, setEx] = useState(() => getExerciseById(decodeURIComponent(id)))
+  const [loading, setLoading] = useState(!ex)
+  const [notFound, setNotFound] = useState(false)
 
-  if (!ex) return (
+  useEffect(() => {
+    if (ex) return
+    const decoded = decodeURIComponent(id)
+    fetch(`${BASE}/api/exercises/${encodeURIComponent(decoded)}`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(json => {
+        if (json.success) setEx(json.data)
+        else setNotFound(true)
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false))
+  }, [id, ex])
+
+  if (loading) return (
+    <div className="page">
+      <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> Back</button>
+      <p style={{ color: 'var(--text3)' }}>Loading…</p>
+    </div>
+  )
+
+  if (notFound || !ex) return (
     <div className="page">
       <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> Back</button>
       <p style={{ color: 'var(--text3)' }}>Exercise not found.</p>
     </div>
   )
 
-  const localImage = exImageUrl(ex.id)
-  const localVideo = exVideoUrl(ex.id)
+  const localImage = resolveUrl(ex.imageUrl) || exImageUrl(ex.id)
+  const localVideo = resolveUrl(ex.mediaUrl) || exVideoUrl(ex.id)
 
   function togglePlay() {
     const v = videoRef.current

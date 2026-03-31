@@ -4,13 +4,16 @@ import fastifyCors from '@fastify/cors'
 import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
 import fastifyRateLimit from '@fastify/rate-limit'
+import fastifyMultipart from '@fastify/multipart'
 import { PrismaClient } from '@prisma/client'
+
 import authRoutes from './routes/auth.js'
 import workoutRoutes from './routes/workouts.js'
 import progressRoutes from './routes/progress.js'
 import exerciseRoutes from './routes/exercises.js'
 import apiKeyRoutes from './routes/api-keys.js'
 import gptRoutes from './routes/gpt.js'
+import adminRoutes from './routes/admin.js'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -82,6 +85,11 @@ await app.register(fastifyJwt, {
   cookie: { cookieName: 'token', signed: false },
 })
 
+// ── File uploads ─────────────────────────────────────────────────────────────
+await app.register(fastifyMultipart, {
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
+})
+
 // ── Auth helper ───────────────────────────────────────────────────────────────
 app.decorate('authenticate', async (req, reply) => {
   try {
@@ -98,6 +106,7 @@ await app.register(progressRoutes, { prefix: '/api/progress' })
 await app.register(exerciseRoutes, { prefix: '/api' })
 await app.register(apiKeyRoutes,   { prefix: '/api/api-keys' })
 await app.register(gptRoutes,      { prefix: '/api/gpt' })
+await app.register(adminRoutes,    { prefix: '/api/admin' })
 
 app.get('/health', () => ({ ok: true, ts: new Date().toISOString() }))
 
