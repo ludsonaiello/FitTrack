@@ -75,13 +75,13 @@ export default async function gptRoutes(app) {
           focus:     { type: 'string', maxLength: 100 },
           level:     { type: 'string', enum: ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'] },
           page:      { type: 'integer', minimum: 1, default: 1 },
-          limit:     { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+          limit:     { type: 'integer', minimum: 1, maximum: 700, default: 700 },
         },
         additionalProperties: false,
       },
     },
   }, async (req) => {
-    const { q, equipment, focus, level, page = 1, limit = 100 } = req.query
+    const { q, equipment, focus, level, page = 1, limit = 700 } = req.query
 
     const where = {}
     if (q) where.name = { contains: q, mode: 'insensitive' }
@@ -90,7 +90,7 @@ export default async function gptRoutes(app) {
     if (level) where.experienceLevel = level.toUpperCase()
 
     const skip = (page - 1) * limit
-    const take = Math.min(Number(limit), 200)
+    const take = Math.min(Number(limit), 700)
 
     const [total, data] = await Promise.all([
       app.prisma.exercise.count({ where }),
