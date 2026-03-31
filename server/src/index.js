@@ -5,6 +5,7 @@ import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
 import fastifyRateLimit from '@fastify/rate-limit'
 import fastifyMultipart from '@fastify/multipart'
+import fastifyFormbody from '@fastify/formbody'
 import { PrismaClient } from '@prisma/client'
 
 import authRoutes from './routes/auth.js'
@@ -87,6 +88,9 @@ await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET,
   cookie: { cookieName: 'token', signed: false },
 })
+
+// ── Form body parser (needed for OAuth token endpoint) ───────────────────────
+await app.register(fastifyFormbody)
 
 // ── File uploads ─────────────────────────────────────────────────────────────
 await app.register(fastifyMultipart, {
