@@ -41,6 +41,42 @@ export async function getActivePlan() {
   return db.plans.where('isActive').equals(1).first()
 }
 
+export async function getAllPlans() {
+  const plans = await db.plans.orderBy('createdAt').reverse().toArray()
+  for (const p of plans) {
+    const days = await db.planDays.where('planId').equals(p.id).toArray()
+    p.dayCount = days.filter(d => d.name !== 'Rest').length
+    let exCount = 0
+    for (const d of days) {
+      exCount += await db.planExercises.where('dayId').equals(d.id).count()
+    }
+    p.exerciseCount = exCount
+  }
+  return plans
+}
+
+export async function setActivePlan(planId) {
+  await db.transaction('rw', db.plans, async () => {
+    await db.plans.toCollection().modify({ isActive: 0 })
+    await db.plans.update(planId, { isActive: 1 })
+  })
+}
+
+export async function deletePlan(planId) {
+  await db.transaction('rw', [db.plans, db.planDays, db.planExercises], async () => {
+    const days = await db.planDays.where('planId').equals(planId).toArray()
+    for (const day of days) {
+      await db.planExercises.where('dayId').equals(day.id).delete()
+    }
+    await db.planDays.where('planId').equals(planId).delete()
+    await db.plans.delete(planId)
+  })
+}
+
+export async function renamePlan(planId, name) {
+  await db.plans.update(planId, { name })
+}
+
 export async function getPlanWithDays(planId) {
   const plan = await db.plans.get(planId)
   if (!plan) return null

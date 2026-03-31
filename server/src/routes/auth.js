@@ -190,7 +190,7 @@ export default async function authRoutes(app) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: req.user.sub },
-        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true },
       })
       if (!user) {
         clearAuthCookies(reply)
@@ -200,6 +200,43 @@ export default async function authRoutes(app) {
     } catch (e) {
       app.log.error(e)
       return reply.status(500).send({ success: false, error: 'Failed to fetch user' })
+    }
+  })
+
+  // ── Update profile ─────────────────────────────────────────────────────────
+  app.patch('/me', {
+    preHandler: [app.authenticate],
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          name:       { type: 'string', minLength: 1, maxLength: 100 },
+          sex:        { type: 'string', enum: ['male', 'female', 'unspecified'] },
+          heightCm:   { type: 'number', minimum: 50, maximum: 275 },
+          heightUnit: { type: 'string', enum: ['cm', 'ft'] },
+          onboarded:  { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (req, reply) => {
+    try {
+      const { name, sex, heightCm, heightUnit, onboarded } = req.body
+      const data = {}
+      if (name      !== undefined) data.name      = name
+      if (sex       !== undefined) data.sex        = sex
+      if (heightCm  !== undefined) data.heightCm  = heightCm
+      if (heightUnit !== undefined) data.heightUnit = heightUnit
+      if (onboarded !== undefined) data.onboarded = onboarded
+      const updated = await prisma.user.update({
+        where: { id: req.user.sub },
+        data,
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true },
+      })
+      return reply.send({ success: true, data: updated })
+    } catch (e) {
+      app.log.error(e)
+      return reply.status(500).send({ success: false, error: 'Failed to update profile' })
     }
   })
 }

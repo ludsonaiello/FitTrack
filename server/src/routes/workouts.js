@@ -48,6 +48,49 @@ export default async function workoutRoutes(app) {
     }
   })
 
+  // PATCH /api/workouts/plans/:id
+  app.patch('/plans/:id', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          name:     { type: 'string', minLength: 1, maxLength: 200 },
+          isActive: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (req, reply) => {
+    const { id } = req.params
+    const userId = req.user.sub
+    try {
+      const existing = await prisma.workoutPlan.findFirst({ where: { id, userId } })
+      if (!existing) return reply.status(404).send({ success: false, error: 'Plan not found' })
+
+      if (req.body.isActive === true) {
+        await prisma.workoutPlan.updateMany({
+          where: { userId, NOT: { id } },
+          data: { isActive: false },
+        })
+      }
+
+      const updated = await prisma.workoutPlan.update({
+        where: { id },
+        data: {
+          ...(req.body.name !== undefined     && { name: req.body.name }),
+          ...(req.body.isActive !== undefined && { isActive: req.body.isActive }),
+        },
+        include: {
+          days: { orderBy: { order: 'asc' }, include: { exercises: { orderBy: { order: 'asc' } } } },
+        },
+      })
+      return reply.send({ success: true, data: updated })
+    } catch (e) {
+      app.log.error(e)
+      return reply.status(500).send({ success: false, error: 'Failed to update plan' })
+    }
+  })
+
   // DELETE /api/workouts/plans/:id
   app.delete('/plans/:id', async (req, reply) => {
     try {

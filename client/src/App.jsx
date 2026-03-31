@@ -83,7 +83,10 @@ function BottomNav({ syncStats, syncRetry }) {
 }
 
 function AuthenticatedApp() {
-  const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('ft_onboarded'))
+  const { user } = useAuth()
+  const [onboarded, setOnboarded] = useState(() => {
+    return !!localStorage.getItem('ft_onboarded') || !!user?.onboarded
+  })
   const { stats: syncStats, retry: syncRetry } = useSyncQueue()
 
   if (!onboarded) {

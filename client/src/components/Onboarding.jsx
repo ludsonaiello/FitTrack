@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Home, Dumbbell, PlayCircle, BarChart2, User, ChevronRight, Check } from 'lucide-react'
 import { db } from '../db/index.js'
 import { toKg } from '../hooks/useWeightUnit.js'
+import { api } from '../lib/api.js'
+import { ftInToCm } from '../lib/bmi.js'
 
 const TOUR_STEPS = [
   {
@@ -41,7 +43,14 @@ const GOAL_TYPES = [
   { value: 'WEIGHT',    label: 'Target body weight', placeholder: '75' },
 ]
 
-const SETUP_STEPS = 4
+const SEX_OPTIONS = [
+  { value: 'male',        label: 'Male' },
+  { value: 'female',      label: 'Female' },
+  { value: 'unspecified', label: 'Prefer not to say' },
+]
+
+// 0=name, 1=unit, 2=weight, 3=sex, 4=height, 5=goal
+const SETUP_STEPS = 6
 
 export default function Onboarding({ onComplete }) {
   const [phase, setPhase] = useState('tour')  // 'tour' | 'setup'
@@ -51,7 +60,12 @@ export default function Onboarding({ onComplete }) {
   const [name, setName] = useState('')
   const [unit, setUnit] = useState('kg')
   const [weight, setWeight] = useState('')
-  const [goalType, setGoalType] = useState('frequency')
+  const [sex, setSex] = useState('')
+  const [heightUnit, setHeightUnit] = useState('cm')
+  const [heightCm, setHeightCm] = useState('')
+  const [heightFt, setHeightFt] = useState('')
+  const [heightIn, setHeightIn] = useState('0')
+  const [goalType, setGoalType] = useState('FREQUENCY')
   const [goalValue, setGoalValue] = useState('')
 
   function nextTour() {
@@ -69,8 +83,8 @@ export default function Onboarding({ onComplete }) {
     if (weight && parseFloat(weight) > 0) {
       await db.bodyWeights.add({
         weight: toKg(parseFloat(weight), unit),
-        date: new Date().toISOString().slice(0, 10),
-        recordedAt: new Date().toISOString(),
+        unit: 'kg',
+        loggedAt: new Date().toISOString(),
       })
     }
 
@@ -82,6 +96,22 @@ export default function Onboarding({ onComplete }) {
         createdAt: new Date().toISOString(),
       })
     }
+
+    // Compute height in cm
+    let computedHeightCm = null
+    if (heightUnit === 'ft') {
+      const val = ftInToCm(heightFt || 0, heightIn || 0)
+      if (val >= 50) computedHeightCm = val
+    } else if (heightCm && parseFloat(heightCm) >= 50) {
+      computedHeightCm = parseFloat(heightCm)
+    }
+
+    // Sync profile to server (best-effort — don't block completion)
+    const patch = { onboarded: true }
+    if (name.trim()) patch.name = name.trim()
+    if (sex) patch.sex = sex
+    if (computedHeightCm) { patch.heightCm = computedHeightCm; patch.heightUnit = heightUnit }
+    api.patch('/api/auth/me', patch).catch(() => {})
 
     localStorage.setItem('ft_onboarded', '1')
     onComplete()
@@ -182,11 +212,13 @@ export default function Onboarding({ onComplete }) {
 
   // ── Setup form ───────────────────────────────────────────────────────────────
 
-  const setupTitles = ["What's your name?", 'Weight unit', 'Starting weight', 'Set a goal']
-  const setupSubs   = [
+  const setupTitles = ["What's your name?", 'Weight unit', 'Starting weight', 'Biological sex', 'Your height', 'Set a goal']
+  const setupSubs = [
     'We\'ll use this to personalize your experience.',
     'You can change this anytime in Profile.',
     'Optional — we\'ll track your progress from here.',
+    'Optional — used for BMI and body composition tracking.',
+    'Optional — needed to calculate your BMI.',
     'Optional — helps you stay focused and motivated.',
   ]
 
@@ -300,8 +332,122 @@ export default function Onboarding({ onComplete }) {
           </div>
         )}
 
-        {/* Step 3 — Goal */}
+        {/* Step 3 — Sex */}
         {setupStep === 3 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {SEX_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSex(opt.value)}
+                style={{
+                  padding: '18px 20px', borderRadius: 14, textAlign: 'left',
+                  border: `2px solid ${sex === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                  background: sex === opt.value ? 'rgba(232,255,0,0.1)' : 'var(--surface2)',
+                  color: sex === opt.value ? 'var(--accent)' : 'var(--text)',
+                  fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.2rem',
+                  cursor: 'pointer', transition: 'all 0.15s', letterSpacing: '0.02em',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}
+              >
+                {opt.label}
+                {sex === opt.value && <Check size={18} color="var(--accent)" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Step 4 — Height */}
+        {setupStep === 4 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Unit toggle */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['cm', 'ft'].map(u => (
+                <button
+                  key={u}
+                  onClick={() => setHeightUnit(u)}
+                  style={{
+                    flex: 1, padding: '10px 0', borderRadius: 10,
+                    border: `2px solid ${heightUnit === u ? 'var(--accent)' : 'var(--border)'}`,
+                    background: heightUnit === u ? 'rgba(232,255,0,0.1)' : 'var(--surface2)',
+                    color: heightUnit === u ? 'var(--accent)' : 'var(--text2)',
+                    fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.1rem',
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                >
+                  {u === 'cm' ? 'cm' : 'ft / in'}
+                </button>
+              ))}
+            </div>
+            {/* Input */}
+            {heightUnit === 'cm' ? (
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="number"
+                  value={heightCm}
+                  onChange={e => setHeightCm(e.target.value)}
+                  placeholder="170"
+                  autoFocus
+                  min={50} max={275}
+                  style={{
+                    fontSize: '1.5rem', padding: '16px 72px 16px 18px',
+                    borderRadius: 12, border: '1px solid var(--border)',
+                    background: 'var(--surface2)', color: 'var(--text)',
+                    width: '100%', boxSizing: 'border-box', outline: 'none',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute', right: 18, top: '50%', transform: 'translateY(-50%)',
+                  color: 'var(--text3)', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.1rem',
+                }}>cm</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type="number"
+                    value={heightFt}
+                    onChange={e => setHeightFt(e.target.value)}
+                    placeholder="5"
+                    autoFocus
+                    min={3} max={8}
+                    style={{
+                      fontSize: '1.5rem', padding: '16px 52px 16px 18px',
+                      borderRadius: 12, border: '1px solid var(--border)',
+                      background: 'var(--surface2)', color: 'var(--text)',
+                      width: '100%', boxSizing: 'border-box', outline: 'none',
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                    color: 'var(--text3)', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.1rem',
+                  }}>ft</span>
+                </div>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type="number"
+                    value={heightIn}
+                    onChange={e => setHeightIn(e.target.value)}
+                    placeholder="10"
+                    min={0} max={11}
+                    style={{
+                      fontSize: '1.5rem', padding: '16px 52px 16px 18px',
+                      borderRadius: 12, border: '1px solid var(--border)',
+                      background: 'var(--surface2)', color: 'var(--text)',
+                      width: '100%', boxSizing: 'border-box', outline: 'none',
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                    color: 'var(--text3)', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.1rem',
+                  }}>in</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 5 — Goal */}
+        {setupStep === 5 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', gap: 10 }}>
               {GOAL_TYPES.map(g => (
@@ -341,7 +487,7 @@ export default function Onboarding({ onComplete }) {
                 position: 'absolute', right: 18, top: '50%', transform: 'translateY(-50%)',
                 color: 'var(--text3)', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '0.9rem',
               }}>
-                {goalType === 'frequency' ? 'times/wk' : unit}
+                {goalType === 'FREQUENCY' ? 'times/wk' : unit}
               </span>
             </div>
           </div>
@@ -369,8 +515,8 @@ export default function Onboarding({ onComplete }) {
           </button>
         </div>
 
-        {/* Skip optional steps */}
-        {setupStep > 1 && (
+        {/* Skip optional steps (all except name) */}
+        {setupStep > 0 && (
           <button
             onClick={handleSetupNext}
             style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: '0.82rem', padding: '4px 0', textAlign: 'center' }}

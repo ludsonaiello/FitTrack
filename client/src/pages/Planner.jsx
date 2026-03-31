@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, ChevronDown, ChevronUp, Trash2, Play, Edit2, Check, X } from 'lucide-react'
-import { db, createPlan, getPlanWithDays, getActivePlan, addExerciseToDay, startSession, syncServerPlans } from '../db/index.js'
+import { Plus, ChevronDown, ChevronUp, Trash2, Play, Edit2, Check, X, BookOpen } from 'lucide-react'
+import {
+  db, createPlan, getPlanWithDays, getActivePlan, addExerciseToDay, startSession,
+  syncServerPlans, getAllPlans, setActivePlan as dbSetActivePlan, deletePlan as dbDeletePlan, renamePlan,
+} from '../db/index.js'
 import { api } from '../lib/api.js'
 import { getExerciseById, exImageUrl } from '../lib/exercises.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
+import PlanPickerSheet from '../components/PlanPickerSheet.jsx'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -50,7 +54,6 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
   const [unit] = useWeightUnit()
   const [sets, setSets] = useState(initial?.sets ?? 3)
   const [reps, setReps] = useState(initial?.reps ?? 10)
-  // initial.weight is stored in kg; display in user's unit
   const [weight, setWeight] = useState(initial?.weight != null ? String(toDisplay(initial.weight, unit)) : '')
   const [rest, setRest] = useState(initial?.rest ?? 60)
 
@@ -63,7 +66,6 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
         background: 'var(--surface)', borderRadius: '16px 16px 0 0',
         padding: 20, width: '100%', maxWidth: 480, margin: '0 auto',
       }}>
-        {/* Header */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
           {info && (
             <img src={exImageUrl(info.id)} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover' }} />
@@ -74,7 +76,6 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
         </div>
 
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-          {/* Sets */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 600 }}>Sets</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -84,7 +85,6 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
             </div>
           </div>
 
-          {/* Reps */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 600 }}>Reps</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -94,38 +94,29 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
             </div>
           </div>
 
-          {/* Weight */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 600 }}>Weight <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: '0.8rem' }}>(optional)</span></span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
-                type="number"
-                value={weight}
-                onChange={e => setWeight(e.target.value)}
-                placeholder="—"
-                style={{ width: 72, textAlign: 'center' }}
+                type="number" value={weight} onChange={e => setWeight(e.target.value)}
+                placeholder="—" style={{ width: 72, textAlign: 'center' }}
                 min={0} step={unit === 'lbs' ? 1 : 0.5}
               />
               <span style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>{unit}</span>
             </div>
           </div>
 
-          {/* Rest */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Rest</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {REST_OPTIONS.map(o => (
-                <button
-                  key={o.value}
-                  onClick={() => setRest(o.value)}
-                  style={{
-                    padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)',
-                    background: rest === o.value ? 'var(--accent)' : 'var(--surface2)',
-                    color: rest === o.value ? '#000' : 'var(--text)',
-                    fontWeight: rest === o.value ? 700 : 400,
-                    cursor: 'pointer', fontSize: '0.85rem',
-                  }}
-                >{o.label}</button>
+                <button key={o.value} onClick={() => setRest(o.value)} style={{
+                  padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)',
+                  background: rest === o.value ? 'var(--accent)' : 'var(--surface2)',
+                  color: rest === o.value ? '#000' : 'var(--text)',
+                  fontWeight: rest === o.value ? 700 : 400,
+                  cursor: 'pointer', fontSize: '0.85rem',
+                }}>{o.label}</button>
               ))}
             </div>
           </div>
@@ -148,9 +139,7 @@ function ExerciseConfigSheet({ tutorialId, initial, onConfirm, onCancel, confirm
 function CreateWizard({ onDone, onCancel }) {
   const [step, setStep] = useState(1)
   const [name, setName] = useState('')
-  // trainingDays: Set of dow (0-6)
   const [trainingDays, setTrainingDays] = useState(new Set([1, 2, 3, 4, 5]))
-  // dayConfigs: { [dow]: { name, rest } }
   const [dayConfigs, setDayConfigs] = useState(() => {
     const cfg = {}
     for (let i = 0; i < 7; i++) cfg[i] = { name: DAY_NAMES[i], rest: 60 }
@@ -173,21 +162,12 @@ function CreateWizard({ onDone, onCancel }) {
   async function handleFinish() {
     const planId = await createPlan(name)
     for (let i = 0; i < 7; i++) {
-      if (trainingDays.has(i)) {
-        await db.planDays.add({
-          planId, dayOfWeek: i,
-          name: dayConfigs[i].name,
-          restSeconds: dayConfigs[i].rest,
-          order: i,
-        })
-      } else {
-        await db.planDays.add({
-          planId, dayOfWeek: i,
-          name: 'Rest',
-          restSeconds: 60,
-          order: i,
-        })
-      }
+      await db.planDays.add({
+        planId, dayOfWeek: i,
+        name: trainingDays.has(i) ? dayConfigs[i].name : 'Rest',
+        restSeconds: dayConfigs[i].rest,
+        order: i,
+      })
     }
     onDone(planId)
   }
@@ -198,14 +178,9 @@ function CreateWizard({ onDone, onCancel }) {
         <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.2rem', marginBottom: 16 }}>
           Step 1 of 3 — Plan Name
         </div>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="e.g. Summer Shred 2025"
-          style={{ marginBottom: 16 }}
-          onKeyDown={e => e.key === 'Enter' && name && setStep(2)}
-          autoFocus
-        />
+        <input value={name} onChange={e => setName(e.target.value)}
+          placeholder="e.g. Summer Shred 2025" style={{ marginBottom: 16 }}
+          onKeyDown={e => e.key === 'Enter' && name && setStep(2)} autoFocus />
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel}>Cancel</button>
           <button className="btn btn-primary" style={{ flex: 2 }} disabled={!name} onClick={() => setStep(2)}>
@@ -227,17 +202,12 @@ function CreateWizard({ onDone, onCancel }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
           {DAY_SHORT.map((d, i) => (
-            <button
-              key={i}
-              onClick={() => toggleDay(i)}
-              style={{
-                padding: '8px 14px', borderRadius: 20, border: '1px solid var(--border)',
-                background: trainingDays.has(i) ? 'var(--accent)' : 'var(--surface2)',
-                color: trainingDays.has(i) ? '#000' : 'var(--text)',
-                fontWeight: trainingDays.has(i) ? 700 : 400,
-                cursor: 'pointer',
-              }}
-            >{d}</button>
+            <button key={i} onClick={() => toggleDay(i)} style={{
+              padding: '8px 14px', borderRadius: 20, border: '1px solid var(--border)',
+              background: trainingDays.has(i) ? 'var(--accent)' : 'var(--surface2)',
+              color: trainingDays.has(i) ? '#000' : 'var(--text)',
+              fontWeight: trainingDays.has(i) ? 700 : 400, cursor: 'pointer',
+            }}>{d}</button>
           ))}
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -250,7 +220,6 @@ function CreateWizard({ onDone, onCancel }) {
     )
   }
 
-  // Step 3
   const trainingDowList = [...trainingDays].sort((a, b) => a - b)
   return (
     <div className="card">
@@ -265,24 +234,16 @@ function CreateWizard({ onDone, onCancel }) {
           <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
             {DAY_NAMES[dow]}
           </div>
-          <input
-            value={dayConfigs[dow].name}
-            onChange={e => updateDayConfig(dow, 'name', e.target.value)}
-            style={{ marginBottom: 10 }}
-          />
+          <input value={dayConfigs[dow].name} onChange={e => updateDayConfig(dow, 'name', e.target.value)} style={{ marginBottom: 10 }} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {REST_OPTIONS.map(o => (
-              <button
-                key={o.value}
-                onClick={() => updateDayConfig(dow, 'rest', o.value)}
-                style={{
-                  padding: '5px 10px', borderRadius: 16, border: '1px solid var(--border)',
-                  background: dayConfigs[dow].rest === o.value ? 'var(--accent)' : 'var(--surface)',
-                  color: dayConfigs[dow].rest === o.value ? '#000' : 'var(--text)',
-                  fontWeight: dayConfigs[dow].rest === o.value ? 700 : 400,
-                  cursor: 'pointer', fontSize: '0.8rem',
-                }}
-              >{o.label}</button>
+              <button key={o.value} onClick={() => updateDayConfig(dow, 'rest', o.value)} style={{
+                padding: '5px 10px', borderRadius: 16, border: '1px solid var(--border)',
+                background: dayConfigs[dow].rest === o.value ? 'var(--accent)' : 'var(--surface)',
+                color: dayConfigs[dow].rest === o.value ? '#000' : 'var(--text)',
+                fontWeight: dayConfigs[dow].rest === o.value ? 700 : 400,
+                cursor: 'pointer', fontSize: '0.8rem',
+              }}>{o.label}</button>
             ))}
           </div>
         </div>
@@ -297,6 +258,63 @@ function CreateWizard({ onDone, onCancel }) {
   )
 }
 
+// ── Inline Edit Form ──────────────────────────────────────────────────────────
+
+function InlineEditForm({ ex, onSave, onCancel }) {
+  const [unit] = useWeightUnit()
+  const [sets, setSets] = useState(ex.targetSets ?? 3)
+  const [reps, setReps] = useState(ex.targetReps ?? 10)
+  const [weight, setWeight] = useState(ex.targetWeight != null ? String(toDisplay(ex.targetWeight, unit)) : '')
+  const [rest, setRest] = useState(ex.restSeconds ?? 60)
+
+  return (
+    <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: 12, marginBottom: 4 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>Sets</span>
+          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setSets(s => Math.max(1, s - 1))}>−</button>
+          <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700 }}>{sets}</span>
+          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setSets(s => s + 1)}>+</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>Reps</span>
+          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setReps(r => Math.max(1, r - 1))}>−</button>
+          <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700 }}>{reps}</span>
+          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setReps(r => r + 1)}>+</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>{unit}</span>
+          <input type="number" value={weight} onChange={e => setWeight(e.target.value)}
+            placeholder="—" style={{ width: 60, textAlign: 'center', padding: '4px 8px', fontSize: '0.9rem' }}
+            min={0} step={unit === 'lbs' ? 1 : 0.5} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+        {REST_OPTIONS.map(o => (
+          <button key={o.value} onClick={() => setRest(o.value)} style={{
+            padding: '4px 9px', borderRadius: 14, border: '1px solid var(--border)',
+            background: rest === o.value ? 'var(--accent)' : 'var(--surface)',
+            color: rest === o.value ? '#000' : 'var(--text)',
+            fontWeight: rest === o.value ? 700 : 400,
+            cursor: 'pointer', fontSize: '0.78rem',
+          }}>{o.label}</button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-ghost" style={{ flex: 1, padding: '6px' }} onClick={onCancel}>
+          <X size={14} /> Cancel
+        </button>
+        <button className="btn btn-primary" style={{ flex: 2, padding: '6px' }}
+          onClick={() => onSave({ sets, reps, weight: toKg(weight, unit), rest })}>
+          <Check size={14} /> Save
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function Planner() {
@@ -304,39 +322,49 @@ export default function Planner() {
   const loc = useLocation()
 
   const [plan, setPlan] = useState(null)
+  const [allPlans, setAllPlans] = useState([])
   const [expandedDays, setExpandedDays] = useState({})
   const [showWizard, setShowWizard] = useState(false)
-  const [editingEx, setEditingEx] = useState(null) // { ex, dayId }
+  const [showPicker, setShowPicker] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null) // plan object pending confirmation
+  const [editingEx, setEditingEx] = useState(null)
 
-  // Incoming state from ExerciseDetail "Add to Plan"
+  // Inline plan name editing
+  const [editingName, setEditingName] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const nameInputRef = useRef(null)
+
+  // Incoming exercise from ExerciseDetail "Add to Plan"
   const [incomingExercise, setIncomingExercise] = useState(loc.state?.addExercise ?? null)
   const [dayPickerOpen, setDayPickerOpen] = useState(!!loc.state?.addExercise)
-  const [pendingDay, setPendingDay] = useState(null) // day object chosen in picker
+  const [pendingDay, setPendingDay] = useState(null)
   const [toast, setToast] = useState(null)
-  const [confirmNewPlan, setConfirmNewPlan] = useState(false)
 
   useEffect(() => {
     async function init() {
-      // Load whatever is already in IndexedDB first (instant)
       const localActive = await getActivePlan()
       if (localActive) loadPlan(localActive.id)
+      await refreshAllPlans()
 
-      // Then sync server plans in the background
       try {
         const json = await api.get('/api/workouts/plans')
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           const newlyActiveId = await syncServerPlans(json.data)
-          // If a server plan was synced and nothing was active locally, load it
-          if (newlyActiveId && !localActive) {
-            loadPlan(newlyActiveId)
-          }
+          if (newlyActiveId && !localActive) loadPlan(newlyActiveId)
+          await refreshAllPlans()
         }
       } catch {
-        // Offline or error — silently skip sync
+        // offline — skip
       }
     }
     init()
   }, [])
+
+  async function refreshAllPlans() {
+    const plans = await getAllPlans()
+    setAllPlans(plans)
+  }
 
   async function loadPlan(id) {
     const p = await getPlanWithDays(id)
@@ -345,11 +373,86 @@ export default function Planner() {
 
   function showToast(msg) {
     setToast(msg)
-    setTimeout(() => setToast(null), 2000)
+    setTimeout(() => setToast(null), 2200)
   }
+
+  // ── Plan switching ─────────────────────────────────────────────────────────
+
+  async function handleSwitchPlan(planId) {
+    if (switching) return
+    setSwitching(true)
+    try {
+      await dbSetActivePlan(planId)
+      await loadPlan(planId)
+      await refreshAllPlans()
+      setShowPicker(false)
+      showToast('Plan activated')
+      // Fire-and-forget server sync
+      const target = allPlans.find(p => p.id === planId)
+      if (target?.serverId) {
+        api.patch(`/api/workouts/plans/${target.serverId}`, { isActive: true }).catch(() => {})
+      }
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  // ── Plan deletion ──────────────────────────────────────────────────────────
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return
+    const deletingId = deleteTarget.id
+    const serverId = deleteTarget.serverId
+    setDeleteTarget(null)
+
+    await dbDeletePlan(deletingId)
+
+    // If we deleted the active plan, load the next most recent
+    const remaining = allPlans.filter(p => p.id !== deletingId)
+    if (plan?.id === deletingId) {
+      if (remaining.length > 0) {
+        await dbSetActivePlan(remaining[0].id)
+        await loadPlan(remaining[0].id)
+      } else {
+        setPlan(null)
+      }
+    }
+
+    await refreshAllPlans()
+    if (remaining.length === 0) setShowPicker(false)
+
+    // Fire-and-forget server delete
+    if (serverId) {
+      api.delete(`/api/workouts/plans/${serverId}`).catch(() => {})
+    }
+    showToast('Plan deleted')
+  }
+
+  // ── Plan rename ────────────────────────────────────────────────────────────
+
+  function startEditName() {
+    setDraftName(plan.name)
+    setEditingName(true)
+    setTimeout(() => nameInputRef.current?.select(), 0)
+  }
+
+  async function commitRename() {
+    const trimmed = draftName.trim()
+    setEditingName(false)
+    if (!trimmed || trimmed === plan.name) return
+    await renamePlan(plan.id, trimmed)
+    setPlan(prev => ({ ...prev, name: trimmed }))
+    await refreshAllPlans()
+    if (plan.serverId) {
+      api.patch(`/api/workouts/plans/${plan.serverId}`, { name: trimmed }).catch(() => {})
+    }
+  }
+
+  // ── Wizard ─────────────────────────────────────────────────────────────────
 
   async function handleWizardDone(planId) {
     await loadPlan(planId)
+    await refreshAllPlans()
     setShowWizard(false)
   }
 
@@ -358,28 +461,20 @@ export default function Planner() {
     for (let i = 0; i < 7; i++) {
       const t = tpl.days.find(d => d.dow === i)
       await db.planDays.add({
-        planId, dayOfWeek: i,
-        name: t?.name ?? 'Rest',
-        restSeconds: 60,
-        order: i,
+        planId, dayOfWeek: i, name: t?.name ?? 'Rest', restSeconds: 60, order: i,
       })
     }
-    loadPlan(planId)
+    await loadPlan(planId)
+    await refreshAllPlans()
   }
 
   function handleNewPlan() {
-    if (plan) { setConfirmNewPlan(true); return }
-    doReplacePlan()
-  }
-
-  async function doReplacePlan() {
-    setConfirmNewPlan(false)
-    await db.plans.clear()
-    await db.planDays.clear()
-    await db.planExercises.clear()
+    setShowPicker(false)
     setPlan(null)
     setShowWizard(true)
   }
+
+  // ── Day / exercise editing ─────────────────────────────────────────────────
 
   async function handleStartDay(day) {
     const id = await startSession(plan.id, day.id)
@@ -398,10 +493,8 @@ export default function Planner() {
 
   async function handleSaveEdit(exId, opts) {
     await db.planExercises.update(exId, {
-      targetSets: opts.sets,
-      targetReps: opts.reps,
-      targetWeight: opts.weight,
-      restSeconds: opts.rest,
+      targetSets: opts.sets, targetReps: opts.reps,
+      targetWeight: opts.weight, restSeconds: opts.rest,
     })
     setEditingEx(null)
     loadPlan(plan.id)
@@ -421,20 +514,17 @@ export default function Planner() {
   async function handleIncomingConfirm(opts) {
     if (!pendingDay || !incomingExercise) return
     await addExerciseToDay(pendingDay.id, incomingExercise.id, {
-      targetSets: opts.sets,
-      targetReps: opts.reps,
-      targetWeight: opts.weight,
-      restSeconds: opts.rest,
+      targetSets: opts.sets, targetReps: opts.reps,
+      targetWeight: opts.weight, restSeconds: opts.rest,
     })
     setPendingDay(null)
     setIncomingExercise(null)
-    // Clear navigation state
     window.history.replaceState({}, '')
     await loadPlan(plan.id)
     showToast('Exercise added!')
   }
 
-  // ── No plan — show create / templates ─────────────────────────────────────
+  // ── Empty state ────────────────────────────────────────────────────────────
 
   if (!plan) {
     return (
@@ -446,6 +536,12 @@ export default function Planner() {
           <CreateWizard onDone={handleWizardDone} onCancel={() => setShowWizard(false)} />
         ) : (
           <>
+            {allPlans.length > 0 && (
+              <button className="btn btn-ghost" style={{ width: '100%', marginBottom: 12, justifyContent: 'flex-start' }}
+                onClick={() => setShowPicker(true)}>
+                <BookOpen size={16} /> Switch to saved plan ({allPlans.length})
+              </button>
+            )}
             <button className="btn btn-primary" style={{ width: '100%', marginBottom: 16 }} onClick={() => setShowWizard(true)}>
               <Plus size={18} /> Create Custom Plan
             </button>
@@ -460,25 +556,49 @@ export default function Planner() {
             ))}
           </>
         )}
+
+        {showPicker && (
+          <PlanPickerSheet
+            plans={allPlans}
+            activePlanId={null}
+            switching={switching}
+            onSelect={handleSwitchPlan}
+            onDelete={planId => setDeleteTarget(allPlans.find(p => p.id === planId))}
+            onCreate={handleNewPlan}
+            onClose={() => setShowPicker(false)}
+          />
+        )}
+
+        {deleteTarget && (
+          <ConfirmModal
+            title={`Delete "${deleteTarget.name}"?`}
+            message="This will permanently remove this plan and all its days and exercises."
+            confirmLabel="Delete"
+            onConfirm={handleDeleteConfirm}
+            onCancel={() => setDeleteTarget(null)}
+          />
+        )}
       </div>
     )
   }
 
-  // ── Active plan ────────────────────────────────────────────────────────────
+  // ── Active plan view ───────────────────────────────────────────────────────
 
   const trainingDays = plan.days?.filter(d => d.name !== 'Rest') ?? []
 
   return (
     <div className="page">
-      {confirmNewPlan && (
+      {/* Modals */}
+      {deleteTarget && (
         <ConfirmModal
-          title="Replace current plan?"
-          message="This will permanently remove all existing plan data and start fresh."
-          confirmLabel="Replace"
-          onConfirm={doReplacePlan}
-          onCancel={() => setConfirmNewPlan(false)}
+          title={`Delete "${deleteTarget.name}"?`}
+          message="This will permanently remove this plan and all its days and exercises."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
+
       {/* Toast */}
       {toast && (
         <div style={{
@@ -488,11 +608,26 @@ export default function Planner() {
         }}>{toast}</div>
       )}
 
+      {/* Plan Picker Sheet */}
+      {showPicker && (
+        <PlanPickerSheet
+          plans={allPlans}
+          activePlanId={plan.id}
+          switching={switching}
+          onSelect={handleSwitchPlan}
+          onDelete={planId => setDeleteTarget(allPlans.find(p => p.id === planId))}
+          onCreate={handleNewPlan}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Active Plan</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              Active Plan
+            </div>
             {plan.serverId && (
               <span style={{
                 fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em',
@@ -501,10 +636,41 @@ export default function Planner() {
               }}>AI</span>
             )}
           </div>
-          <h2 style={{ margin: '2px 0 0', fontFamily: 'Barlow Condensed' }}>{plan.name}</h2>
+
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              value={draftName}
+              onChange={e => setDraftName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditingName(false) }}
+              style={{
+                fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.4rem',
+                background: 'var(--surface2)', border: '1px solid var(--accent)',
+                borderRadius: 8, padding: '2px 8px', color: 'var(--text)', width: '100%',
+              }}
+            />
+          ) : (
+            <button
+              onClick={startEditName}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, background: 'none',
+                border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text)',
+              }}
+            >
+              <h2 style={{ margin: 0, fontFamily: 'Barlow Condensed' }}>{plan.name}</h2>
+              <Edit2 size={14} color="var(--text3)" />
+            </button>
+          )}
         </div>
-        <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '8px 12px' }} onClick={handleNewPlan}>
-          New Plan
+
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: '0.75rem', padding: '8px 12px', flexShrink: 0, marginLeft: 12 }}
+          onClick={() => setShowPicker(true)}
+        >
+          <BookOpen size={14} />
+          {allPlans.length > 1 ? ` ${allPlans.length} plans` : ' Plans'}
         </button>
       </div>
 
@@ -583,11 +749,7 @@ export default function Planner() {
 
               <button className="btn btn-ghost" style={{ width: '100%', marginTop: 10, fontSize: '0.85rem' }}
                 onClick={() => nav('/exercises', {
-                  state: {
-                    selectForDay: day.id,
-                    dayName: day.name,
-                    defaultRest: day.restSeconds ?? 60,
-                  },
+                  state: { selectForDay: day.id, dayName: day.name, defaultRest: day.restSeconds ?? 60 },
                 })}>
                 <Plus size={16} /> Add Exercise
               </button>
@@ -637,67 +799,6 @@ export default function Planner() {
           onCancel={() => { setPendingDay(null); setIncomingExercise(null) }}
         />
       )}
-    </div>
-  )
-}
-
-// ── Inline Edit Form ──────────────────────────────────────────────────────────
-
-function InlineEditForm({ ex, onSave, onCancel }) {
-  const [unit] = useWeightUnit()
-  const [sets, setSets] = useState(ex.targetSets ?? 3)
-  const [reps, setReps] = useState(ex.targetReps ?? 10)
-  const [weight, setWeight] = useState(ex.targetWeight != null ? String(toDisplay(ex.targetWeight, unit)) : '')
-  const [rest, setRest] = useState(ex.restSeconds ?? 60)
-
-  return (
-    <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: 12, marginBottom: 4 }}>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-        {/* Sets */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>Sets</span>
-          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setSets(s => Math.max(1, s - 1))}>−</button>
-          <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700 }}>{sets}</span>
-          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setSets(s => s + 1)}>+</button>
-        </div>
-        {/* Reps */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>Reps</span>
-          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setReps(r => Math.max(1, r - 1))}>−</button>
-          <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700 }}>{reps}</span>
-          <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => setReps(r => r + 1)}>+</button>
-        </div>
-        {/* Weight */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>{unit}</span>
-          <input type="number" value={weight} onChange={e => setWeight(e.target.value)}
-            placeholder="—" style={{ width: 60, textAlign: 'center', padding: '4px 8px', fontSize: '0.9rem' }}
-            min={0} step={unit === 'lbs' ? 1 : 0.5} />
-        </div>
-      </div>
-
-      {/* Rest */}
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
-        {REST_OPTIONS.map(o => (
-          <button key={o.value} onClick={() => setRest(o.value)} style={{
-            padding: '4px 9px', borderRadius: 14, border: '1px solid var(--border)',
-            background: rest === o.value ? 'var(--accent)' : 'var(--surface)',
-            color: rest === o.value ? '#000' : 'var(--text)',
-            fontWeight: rest === o.value ? 700 : 400,
-            cursor: 'pointer', fontSize: '0.78rem',
-          }}>{o.label}</button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn-ghost" style={{ flex: 1, padding: '6px' }} onClick={onCancel}>
-          <X size={14} /> Cancel
-        </button>
-        <button className="btn btn-primary" style={{ flex: 2, padding: '6px' }}
-          onClick={() => onSave({ sets, reps, weight: toKg(weight, unit), rest })}>
-          <Check size={14} /> Save
-        </button>
-      </div>
     </div>
   )
 }

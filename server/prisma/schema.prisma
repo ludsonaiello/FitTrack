@@ -23,6 +23,10 @@ model User {
   passwordHash   String
   name           String
   isAdmin        Boolean         @default(false)
+  onboarded      Boolean         @default(false)
+  sex            String?         // "male" | "female" | "unspecified"
+  heightCm       Float?
+  heightUnit     String          @default("cm")
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   plans          WorkoutPlan[]

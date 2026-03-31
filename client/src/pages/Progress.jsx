@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, Target, Dumbbell, Calendar } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { TrendingUp, Target, Dumbbell, Calendar, Activity } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceArea } from 'recharts'
 import { db, getBodyWeightHistory, getWorkoutFrequency, getExercisePR } from '../db/index.js'
 import { allExercises } from '../lib/exercises.js'
 import { enqueue } from '../db/sync-queue.js'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
 import { api, NetworkError } from '../lib/api.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { calculateBmi, classifyBmi, WHO_BANDS } from '../lib/bmi.js'
 
 function WeightChart({ data }) {
   if (!data.length) return (
@@ -21,6 +23,36 @@ function WeightChart({ data }) {
         <YAxis tick={{fill:'var(--text3)',fontSize:11}} tickLine={false} axisLine={false}/>
         <Tooltip contentStyle={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text)',fontSize:13}}/>
         <Line type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={2} dot={false} activeDot={{r:4,fill:'var(--accent)'}}/>
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function BmiChart({ data }) {
+  if (!data.length) return null
+  const values = data.map(d => d.bmi)
+  const minBmi = Math.min(...values)
+  const maxBmi = Math.max(...values)
+  const yMin = Math.max(10, Math.floor(minBmi) - 2)
+  const yMax = Math.min(50, Math.ceil(maxBmi) + 2)
+  return (
+    <ResponsiveContainer width="100%" height={180}>
+      <LineChart data={data} margin={{top:5,right:5,left:-20,bottom:0}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
+        {WHO_BANDS.map(b => (
+          <ReferenceArea key={b.label} y1={Math.max(yMin, b.min)} y2={Math.min(yMax, b.max)}
+            fill={b.bg} ifOverflow="hidden"/>
+        ))}
+        <XAxis dataKey="date" tick={{fill:'var(--text3)',fontSize:11}} tickLine={false} axisLine={false}/>
+        <YAxis domain={[yMin, yMax]} tick={{fill:'var(--text3)',fontSize:11}} tickLine={false} axisLine={false}/>
+        <Tooltip
+          contentStyle={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text)',fontSize:13}}
+          formatter={(val) => {
+            const cls = classifyBmi(val)
+            return [`${val} — ${cls?.label ?? ''}`, 'BMI']
+          }}
+        />
+        <Line type="monotone" dataKey="bmi" stroke="var(--accent)" strokeWidth={2} dot={false} activeDot={{r:4,fill:'var(--accent)'}}/>
       </LineChart>
     </ResponsiveContainer>
   )
@@ -46,7 +78,9 @@ function Heatmap({ freq }) {
 }
 
 export default function Progress() {
+  const { user } = useAuth()
   const [weightData, setWeightData] = useState([])
+  const [bmiData, setBmiData] = useState([])
   const [freq, setFreq] = useState({})
   const [newWeight, setNewWeight] = useState('')
   const [prs, setPRs] = useState([])
@@ -62,6 +96,14 @@ export default function Progress() {
     // Show local data immediately (instant)
     let weights = await getBodyWeightHistory(90)
     setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
+    // Compute BMI series using server-stored height
+    const heightCm = user?.heightCm
+    if (heightCm) {
+      setBmiData(weights
+        .map(w => ({ date: w.loggedAt.slice(5,10), bmi: calculateBmi(w.weight, heightCm) }))
+        .filter(d => d.bmi !== null)
+      )
+    }
 
     // Sync from server in background — seeds entries from other devices
     try {
@@ -79,6 +121,12 @@ export default function Progress() {
         if (added > 0) {
           weights = await getBodyWeightHistory(90)
           setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
+          if (heightCm) {
+            setBmiData(weights
+              .map(w => ({ date: w.loggedAt.slice(5,10), bmi: calculateBmi(w.weight, heightCm) }))
+              .filter(d => d.bmi !== null)
+            )
+          }
         }
       }
     } catch (e) {
@@ -157,6 +205,79 @@ export default function Progress() {
           <button className="btn btn-primary" onClick={handleLogWeight} disabled={!newWeight}>Log</button>
         </div>
       </div>
+
+      {/* BMI tracker */}
+      {user?.heightCm ? (
+        <div className="card" style={{marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <h3 style={{margin:0,display:'flex',alignItems:'center',gap:8}}>
+              <Activity size={18} color="var(--accent)"/> BMI Tracker
+            </h3>
+            {bmiData.length > 0 && (() => {
+              const latest = bmiData[bmiData.length - 1].bmi
+              const cls = classifyBmi(latest)
+              return (
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontFamily:'Barlow Condensed',fontWeight:800,fontSize:'1.1rem',color:cls.color}}>{latest}</span>
+                  <span style={{
+                    padding:'2px 8px',borderRadius:100,
+                    background:cls.color,color:'#fff',
+                    fontFamily:'Barlow Condensed',fontWeight:700,fontSize:'0.75rem',
+                  }}>{cls.label}</span>
+                </div>
+              )
+            })()}
+          </div>
+
+          {bmiData.length > 0 ? (
+            <>
+              <BmiChart data={bmiData}/>
+              {/* WHO alert */}
+              {(() => {
+                const latest = bmiData[bmiData.length - 1].bmi
+                const cls = classifyBmi(latest)
+                if (cls.label === 'Normal') return null
+                const messages = {
+                  'Underweight': 'Your BMI is below 18.5. WHO recommends consulting a healthcare provider about healthy weight gain strategies.',
+                  'Overweight':  'Your BMI is above 25. WHO recommends regular physical activity and a balanced diet to reach a healthy weight.',
+                  'Obese I':     'Your BMI indicates obesity (class I). WHO recommends medical guidance for safe weight management.',
+                  'Obese II':    'Your BMI indicates obesity (class II). Please consult a healthcare provider.',
+                  'Obese III':   'Your BMI indicates severe obesity. Please seek medical advice.',
+                }
+                return (
+                  <div style={{
+                    marginTop:12, padding:'10px 14px', borderRadius:10,
+                    background:`${cls.bg}`, border:`1px solid ${cls.color}44`,
+                    fontSize:'0.78rem', color:'var(--text2)', lineHeight:1.6,
+                  }}>
+                    {messages[cls.label]}
+                  </div>
+                )
+              })()}
+              {/* Legend */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'6px 12px',marginTop:12}}>
+                {WHO_BANDS.slice(0,4).map(b=>(
+                  <div key={b.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:'0.68rem',color:'var(--text3)'}}>
+                    <div style={{width:10,height:10,borderRadius:2,background:b.color,flexShrink:0}}/>
+                    {b.label} {b.min}–{b.max === 60 ? '40+' : b.max}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{textAlign:'center',padding:'24px 0',color:'var(--text3)',fontSize:'0.88rem'}}>
+              Log your weight above to see BMI over time.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card" style={{marginBottom:16,display:'flex',alignItems:'center',gap:12,padding:'14px 16px'}}>
+          <Activity size={18} color="var(--text3)"/>
+          <div style={{fontSize:'0.85rem',color:'var(--text3)'}}>
+            Add your height in <strong style={{color:'var(--text)'}}>Profile → Body Stats</strong> to track BMI over time.
+          </div>
+        </div>
+      )}
 
       {/* Activity heatmap 84 days */}
       <div className="card" style={{marginBottom:16}}>

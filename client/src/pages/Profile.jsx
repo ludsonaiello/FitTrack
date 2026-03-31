@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Plus, ExternalLink, Shield } from 'lucide-react'
+import { User, Target, Bell, Trash2, Download, LogOut, Scale, Plus, ExternalLink, Shield, Ruler } from 'lucide-react'
 import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
@@ -7,6 +7,7 @@ import ConfirmModal from '../components/ConfirmModal.jsx'
 import { useNavigate, Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { enqueue } from '../db/sync-queue.js'
+import { calculateBmi, classifyBmi, cmToFtIn, ftInToCm } from '../lib/bmi.js'
 
 const GOAL_TYPES = [
   {value:'WEIGHT',label:'Target Body Weight',unit:'kg'},
@@ -25,12 +26,22 @@ export default function Profile() {
   const [notifPerm, setNotifPerm] = useState(typeof Notification!=='undefined'?Notification.permission:'unsupported')
   const [confirmClear, setConfirmClear] = useState(false)
 
-  // API Keys state
-  const [apiKeys, setApiKeys] = useState([])
-  const [newKeyLabel, setNewKeyLabel] = useState('')
-  const [keyError, setKeyError] = useState('')
-  const [confirmRevokeId, setConfirmRevokeId] = useState(null)
-  const [copiedId, setCopiedId] = useState(null)
+  // Body stats
+  const [sex, setSex] = useState(user?.sex || '')
+  const [heightUnit, setHeightUnit] = useState(user?.heightUnit || 'cm')
+  const [heightCm, setHeightCm] = useState(() => user?.heightCm ? String(Math.round(user.heightCm)) : '')
+  const [heightFt, setHeightFt] = useState(() => {
+    if (!user?.heightCm) return ''
+    const { feet } = cmToFtIn(user.heightCm)
+    return String(feet)
+  })
+  const [heightIn, setHeightIn] = useState(() => {
+    if (!user?.heightCm) return '0'
+    const { inches } = cmToFtIn(user.heightCm)
+    return String(inches)
+  })
+  const [latestWeightKg, setLatestWeightKg] = useState(null)
+  const [bodyStatsSaving, setBodyStatsSaving] = useState(false)
 
   useEffect(() => {
     db.goals.toArray().then(setGoals)
@@ -39,10 +50,26 @@ export default function Profile() {
       db.exerciseSets.count(),
       db.bodyWeights.count(),
     ]).then(([sessions,sets,weights])=>setDbStats({sessions,sets,weights}))
-    api.get('/api/api-keys').then(r => setApiKeys(r.data || [])).catch(() => {})
+    db.bodyWeights.orderBy('loggedAt').reverse().first().then(w => {
+      if (w) setLatestWeightKg(w.weight)
+    })
   },[])
 
   function saveName() { localStorage.setItem('ft_name', name) }
+
+  async function saveBodyStats() {
+    setBodyStatsSaving(true)
+    const computed = heightUnit === 'ft'
+      ? ftInToCm(heightFt || 0, heightIn || 0)
+      : parseFloat(heightCm) || 0
+    const patch = { heightUnit }
+    if (sex) patch.sex = sex
+    if (computed >= 50) patch.heightCm = computed
+    try {
+      await api.patch('/api/auth/me', patch)
+    } catch { /* offline — ignore */ }
+    setBodyStatsSaving(false)
+  }
 
   async function addGoal() {
     if (!newGoalValue) return
@@ -70,35 +97,6 @@ export default function Profile() {
     if (typeof Notification === 'undefined') return
     const perm = await Notification.requestPermission()
     setNotifPerm(perm)
-  }
-
-  async function generateApiKey() {
-    setKeyError('')
-    if (!newKeyLabel.trim()) { setKeyError('Enter a label for this key'); return }
-    try {
-      await api.post('/api/api-keys', { label: newKeyLabel.trim() })
-      setNewKeyLabel('')
-      const updated = await api.get('/api/api-keys')
-      setApiKeys(updated.data || [])
-    } catch (e) {
-      setKeyError(e.message)
-    }
-  }
-
-  function copyKey(id, rawKey) {
-    navigator.clipboard.writeText(rawKey)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
-  }
-
-  async function revokeApiKey(id) {
-    try {
-      await api.delete(`/api/api-keys/${id}`)
-      setApiKeys(prev => prev.filter(k => k.id !== id))
-      setConfirmRevokeId(null)
-    } catch (e) {
-      setKeyError(e.message)
-    }
   }
 
   async function clearData() {
@@ -190,6 +188,113 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* Body Stats */}
+      {(() => {
+        const computedHeightCm = heightUnit === 'ft'
+          ? ftInToCm(heightFt || 0, heightIn || 0)
+          : parseFloat(heightCm) || 0
+        const bmi = calculateBmi(latestWeightKg, computedHeightCm >= 50 ? computedHeightCm : user?.heightCm)
+        const cls = classifyBmi(bmi)
+        return (
+          <div className="card" style={{marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+              <Ruler size={16} color="var(--accent)"/>
+              <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>Body Stats & BMI</div>
+            </div>
+
+            {/* Sex */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:'0.75rem',color:'var(--text3)',marginBottom:8}}>Biological sex</div>
+              <div style={{display:'flex',gap:8}}>
+                {[{v:'male',l:'Male'},{v:'female',l:'Female'},{v:'unspecified',l:'Other'}].map(opt=>(
+                  <button key={opt.v} onClick={()=>setSex(opt.v)} style={{
+                    flex:1, padding:'10px 4px', borderRadius:10,
+                    border:`1px solid ${sex===opt.v?'var(--accent)':'var(--border)'}`,
+                    background:sex===opt.v?'rgba(232,255,0,0.1)':'var(--surface2)',
+                    color:sex===opt.v?'var(--accent)':'var(--text)',
+                    fontFamily:'Barlow Condensed', fontWeight:700, fontSize:'0.9rem',
+                    cursor:'pointer', transition:'all 0.15s',
+                  }}>{opt.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Height */}
+            <div style={{marginBottom:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontSize:'0.75rem',color:'var(--text3)'}}>Height</div>
+                <div style={{display:'flex',gap:6}}>
+                  {['cm','ft'].map(u=>(
+                    <button key={u} onClick={()=>setHeightUnit(u)} style={{
+                      padding:'3px 10px', borderRadius:6,
+                      border:`1px solid ${heightUnit===u?'var(--accent)':'var(--border)'}`,
+                      background:heightUnit===u?'rgba(232,255,0,0.1)':'transparent',
+                      color:heightUnit===u?'var(--accent)':'var(--text3)',
+                      fontSize:'0.75rem', fontWeight:700, cursor:'pointer',
+                    }}>{u==='cm'?'cm':'ft/in'}</button>
+                  ))}
+                </div>
+              </div>
+              {heightUnit==='cm' ? (
+                <div style={{position:'relative'}}>
+                  <input type="number" value={heightCm} onChange={e=>setHeightCm(e.target.value)}
+                    placeholder="170" min={50} max={275}
+                    style={{width:'100%',boxSizing:'border-box',paddingRight:48}}/>
+                  <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',fontSize:'0.85rem',fontFamily:'Barlow Condensed',fontWeight:700}}>cm</span>
+                </div>
+              ) : (
+                <div style={{display:'flex',gap:8}}>
+                  <div style={{position:'relative',flex:1}}>
+                    <input type="number" value={heightFt} onChange={e=>setHeightFt(e.target.value)}
+                      placeholder="5" min={3} max={8} style={{width:'100%',boxSizing:'border-box',paddingRight:36}}/>
+                    <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',fontSize:'0.85rem',fontFamily:'Barlow Condensed',fontWeight:700}}>ft</span>
+                  </div>
+                  <div style={{position:'relative',flex:1}}>
+                    <input type="number" value={heightIn} onChange={e=>setHeightIn(e.target.value)}
+                      placeholder="10" min={0} max={11} style={{width:'100%',boxSizing:'border-box',paddingRight:36}}/>
+                    <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',fontSize:'0.85rem',fontFamily:'Barlow Condensed',fontWeight:700}}>in</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* BMI display */}
+            {bmi !== null && (
+              <div style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                padding:'12px 14px', borderRadius:10, marginBottom:14,
+                background:`${cls.bg}`, border:`1px solid ${cls.color}33`,
+              }}>
+                <div>
+                  <div style={{fontSize:'0.7rem',color:'var(--text3)',fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:2}}>Your BMI</div>
+                  <div style={{fontFamily:'Barlow Condensed',fontWeight:800,fontSize:'1.8rem',color:cls.color,lineHeight:1}}>{bmi}</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{
+                    display:'inline-block', padding:'4px 12px', borderRadius:100,
+                    background:cls.color, color:'#fff',
+                    fontFamily:'Barlow Condensed', fontWeight:700, fontSize:'0.85rem',
+                    letterSpacing:'0.04em',
+                  }}>{cls.label}</div>
+                  {cls.label !== 'Normal' && (
+                    <div style={{fontSize:'0.7rem',color:'var(--text3)',marginTop:4}}>WHO: normal 18.5–24.9</div>
+                  )}
+                </div>
+              </div>
+            )}
+            {bmi === null && (
+              <div style={{fontSize:'0.78rem',color:'var(--text3)',marginBottom:14,lineHeight:1.5}}>
+                Enter your height and log a weight to see your BMI.
+              </div>
+            )}
+
+            <button className="btn btn-primary" style={{width:'100%'}} onClick={saveBodyStats} disabled={bodyStatsSaving}>
+              {bodyStatsSaving ? 'Saving…' : 'Save body stats'}
+            </button>
+          </div>
+        )
+      })()}
+
       {/* Goals */}
       <div className="card" style={{marginBottom:12}}>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
@@ -266,97 +371,49 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* API Keys */}
+      {/* FitTrack Planner GPT */}
       <div className="card" style={{marginBottom:12}}>
-        {confirmRevokeId && (
-          <ConfirmModal
-            title="Revoke API key?"
-            message="This key will stop working immediately. Any GPT using it will lose access."
-            confirmLabel="Revoke"
-            onConfirm={() => revokeApiKey(confirmRevokeId)}
-            onCancel={() => setConfirmRevokeId(null)}
-          />
-        )}
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-          <Key size={16} color="var(--accent)"/>
-          <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>GPT API Keys</div>
-        </div>
-        <div style={{fontSize:'0.8rem',color:'var(--text3)',marginBottom:12,lineHeight:1.5}}>
-          Generate keys to connect a Custom ChatGPT to your FitTrack account.
-        </div>
-
-        {/* Existing keys */}
-        {apiKeys.map(k => (
-          <div key={k.id} style={{padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-              <div style={{flex:1,fontWeight:600,fontSize:'0.85rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.label}</div>
-              <button onClick={() => setConfirmRevokeId(k.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',padding:4,flexShrink:0}}>
-                <Trash2 size={15}/>
-              </button>
-            </div>
-            {k.rawKey ? (
-              <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                <div style={{
-                  flex:1, fontFamily:'monospace', fontSize:'0.72rem', color:'var(--text)',
-                  background:'var(--surface2)', padding:'7px 10px', borderRadius:8,
-                  wordBreak:'break-all', letterSpacing:'0.02em',
-                }}>
-                  {k.rawKey}
-                </div>
-                <button
-                  onClick={() => copyKey(k.id, k.rawKey)}
-                  title="Copy key"
-                  style={{background:'none',border:'none',cursor:'pointer',color: copiedId === k.id ? 'var(--accent)' : 'var(--text3)',padding:4,flexShrink:0}}>
-                  <Copy size={15}/>
-                </button>
-              </div>
-            ) : (
-              <div style={{fontSize:'0.72rem',color:'var(--text3)',fontFamily:'monospace'}}>{k.prefix}••••••••</div>
-            )}
-            <div style={{fontSize:'0.68rem',color:'var(--text3)',marginTop:4}}>
-              Created {new Date(k.createdAt).toLocaleDateString()}
-              {k.lastUsed ? ` · Last used ${new Date(k.lastUsed).toLocaleDateString()}` : ' · Never used'}
-            </div>
-          </div>
-        ))}
-
-        {/* Generate new key */}
-        <div style={{display:'flex',gap:8,marginTop:12}}>
-          <input
-            value={newKeyLabel}
-            onChange={e => setNewKeyLabel(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && generateApiKey()}
-            placeholder="Key label, e.g. My GPT"
-            style={{flex:1,fontSize:'0.85rem'}}
-          />
-          <button className="btn btn-primary" onClick={generateApiKey} style={{padding:'8px 12px',fontSize:'0.85rem'}}>
-            <Plus size={14}/> Generate
-          </button>
-        </div>
-        {keyError && <div style={{fontSize:'0.75rem',color:'var(--accent2)',marginTop:6}}>{keyError}</div>}
-        {apiKeys.length === 0 && (
-          <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:8}}>No keys yet — generate one above.</div>
-        )}
-      </div>
-
-      {/* FitTrack Planner GPT — how to connect */}
-      <div className="card" style={{marginBottom:12}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
           <span style={{fontSize:'1rem'}}>🤖</span>
           <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>FitTrack Planner GPT</div>
         </div>
-        <div style={{fontSize:'0.8rem',color:'var(--text3)',marginBottom:14,lineHeight:1.6}}>
-          Connect ChatGPT to your account — it will read your goals, browse all 610 exercises and build a personalised plan saved directly here.
-        </div>
+        <p style={{fontSize:'0.82rem',color:'var(--text3)',marginBottom:16,lineHeight:1.6}}>
+          Your AI personal trainer — reads your profile and goals, browses 610 exercises, and builds a personalised plan saved directly to your account.
+        </p>
 
         {[
-          { n:1, label:'Generate an API key', detail:'Use the "GPT API Keys" section above — give it any label, then copy the key.' },
-          { n:2, label:'Open FitTrack Planner', detail:'Tap the button below to open the Custom GPT in ChatGPT.' },
-          { n:3, label:'Authorise when prompted', detail:'ChatGPT will ask for an API key — paste the key you copied.' },
-          { n:4, label:'Chat to build your plan', detail:'Tell the GPT your goals, schedule, or equipment. It will browse exercises and create the plan.' },
-          { n:5, label:'Come back to check', detail:'Your new plan appears in the Planner tab automatically once the GPT saves it.' },
+          {
+            n: 1,
+            label: 'Open the GPT',
+            detail: 'Tap the button below. You\'ll need a ChatGPT account (free or Plus).',
+          },
+          {
+            n: 2,
+            label: 'Sign in to FitTrack',
+            detail: 'ChatGPT will redirect you to the FitTrack login page. Enter your FitTrack email and password — the same credentials you use here.',
+          },
+          {
+            n: 3,
+            label: 'Authorise access',
+            detail: 'After signing in, tap "Allow" to grant the GPT access to your account. This only happens once.',
+          },
+          {
+            n: 4,
+            label: 'Answer the questions',
+            detail: 'The GPT will ask about your goals, available equipment, training days per week, and experience level. Answer as best you can.',
+          },
+          {
+            n: 5,
+            label: 'Review and approve the plan',
+            detail: 'The GPT presents the full plan before saving — review the days and exercises, then tell it to go ahead.',
+          },
+          {
+            n: 6,
+            label: 'Plan saved — check the Planner tab',
+            detail: 'Your new plan appears automatically in the Planner. It\'s set as your active plan and ready to use.',
+          },
         ].map(({ n, label, detail }) => (
-          <div key={n} style={{display:'flex',gap:12,marginBottom:12,alignItems:'flex-start'}}>
+          <div key={n} style={{display:'flex',gap:12,marginBottom:14,alignItems:'flex-start'}}>
             <div style={{
               flexShrink:0, width:24, height:24, borderRadius:'50%',
               background:'var(--accent)', color:'#000',
@@ -365,7 +422,7 @@ export default function Profile() {
             }}>{n}</div>
             <div>
               <div style={{fontFamily:'Barlow Condensed',fontWeight:700,fontSize:'0.95rem'}}>{label}</div>
-              <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:2,lineHeight:1.4}}>{detail}</div>
+              <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:2,lineHeight:1.5}}>{detail}</div>
             </div>
           </div>
         ))}
@@ -376,10 +433,10 @@ export default function Profile() {
           rel="noopener noreferrer"
           style={{
             display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-            width:'100%', padding:'11px 0', borderRadius:10, marginTop:4,
+            width:'100%', padding:'13px 0', borderRadius:10, marginTop:4,
             background:'var(--accent)', color:'#000',
             fontFamily:'Barlow Condensed', fontWeight:800, fontSize:'1rem',
-            letterSpacing:'0.05em', textDecoration:'none', border:'none', cursor:'pointer',
+            letterSpacing:'0.05em', textDecoration:'none',
           }}
         >
           Open FitTrack Planner <ExternalLink size={14}/>
