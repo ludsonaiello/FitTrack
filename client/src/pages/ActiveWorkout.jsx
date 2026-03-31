@@ -371,7 +371,7 @@ export default function ActiveWorkout() {
       )}
 
       {/* Header */}
-      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+      <div style={{padding:'calc(12px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
         <button onClick={()=>setShowFinish(true)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',padding:4}}>
           <X size={22}/>
         </button>

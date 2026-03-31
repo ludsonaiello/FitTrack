@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Home, Dumbbell, PlayCircle, BarChart2, User, ChevronRight, Check } from 'lucide-react'
 import { db } from '../db/index.js'
+import { enqueue } from '../db/sync-queue.js'
 import { toKg } from '../hooks/useWeightUnit.js'
 import { api } from '../lib/api.js'
 import { ftInToCm } from '../lib/bmi.js'
@@ -81,11 +82,10 @@ export default function Onboarding({ onComplete }) {
     localStorage.setItem('ft_weight_unit', unit)
 
     if (weight && parseFloat(weight) > 0) {
-      await db.bodyWeights.add({
-        weight: toKg(parseFloat(weight), unit),
-        unit: 'kg',
-        loggedAt: new Date().toISOString(),
-      })
+      const weightKg = toKg(parseFloat(weight), unit)
+      const loggedAt = new Date().toISOString()
+      const localId = await db.bodyWeights.add({ weight: weightKg, unit: 'kg', loggedAt })
+      enqueue('bodyWeights', localId, { weight: weightKg, unit: 'kg', loggedAt })
     }
 
     if (goalValue && parseFloat(goalValue) > 0) {
