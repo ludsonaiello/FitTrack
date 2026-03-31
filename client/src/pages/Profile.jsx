@@ -4,7 +4,7 @@ import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { enqueue } from '../db/sync-queue.js'
 import { calculateBmi, classifyBmi, cmToFtIn, ftInToCm } from '../lib/bmi.js'
@@ -17,6 +17,7 @@ const GOAL_TYPES = [
 export default function Profile() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [weightUnit, setWeightUnit] = useWeightUnit()
   const [name, setName] = useState(() => user?.name || localStorage.getItem('ft_name') || '')
   const [goals, setGoals] = useState([])
@@ -42,6 +43,13 @@ export default function Profile() {
   })
   const [latestWeightKg, setLatestWeightKg] = useState(null)
   const [bodyStatsSaving, setBodyStatsSaving] = useState(false)
+
+  useEffect(() => {
+    if (location.hash) {
+      const el = document.getElementById(location.hash.slice(1))
+      if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    }
+  }, [location.hash])
 
   useEffect(() => {
     db.goals.toArray().then(setGoals)
@@ -336,6 +344,11 @@ export default function Profile() {
             <div style={{fontSize:'0.8rem',color:'var(--text3)'}}>
               {notifPerm==='granted'?'✅ Enabled':notifPerm==='denied'?'❌ Blocked in browser settings':'Tap to enable'}
             </div>
+            {notifPerm !== 'granted' && (
+              <div style={{fontSize:'0.72rem',color:'var(--text3)',marginTop:4,lineHeight:1.5}}>
+                iOS: requires <strong style={{color:'var(--text2)'}}>iOS 16.4+</strong> and the app added to your Home Screen.
+              </div>
+            )}
           </div>
           {notifPerm==='default'&&(
             <button className="btn btn-ghost" style={{padding:'8px 12px',fontSize:'0.8rem'}} onClick={requestNotif}>Enable</button>
@@ -372,7 +385,7 @@ export default function Profile() {
       </div>
 
       {/* FitTrack Planner GPT */}
-      <div className="card" style={{marginBottom:12}}>
+      <div id="gpt-instructions" className="card" style={{marginBottom:12}}>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
           <span style={{fontSize:'1rem'}}>🤖</span>
           <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>FitTrack Planner GPT</div>

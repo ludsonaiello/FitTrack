@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom'
 import { Home, Dumbbell, PlayCircle, BarChart2, User, WifiOff } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
+import { db } from './db/index.js'
 import Onboarding from './components/Onboarding.jsx'
 import SyncBadge from './components/SyncBadge.jsx'
 import { useSyncQueue } from './hooks/useSyncQueue.js'
@@ -84,10 +85,29 @@ function BottomNav({ syncStats, syncRetry }) {
 
 function AuthenticatedApp() {
   const { user } = useAuth()
-  const [onboarded, setOnboarded] = useState(() => {
-    return !!localStorage.getItem('ft_onboarded') || !!user?.onboarded
-  })
+  const [onboarded, setOnboarded] = useState(() => !!user?.onboarded)
   const { stats: syncStats, retry: syncRetry } = useSyncQueue()
+
+  // Clear IndexedDB when a different user logs in on the same browser.
+  // This prevents stale data from a previous account leaking through.
+  useEffect(() => {
+    const storedId = localStorage.getItem('ft_user_id')
+    if (storedId && storedId !== user.id) {
+      // Different user — wipe all local data
+      db.plans.clear()
+      db.planDays.clear()
+      db.planExercises.clear()
+      db.sessions.clear()
+      db.exerciseSets.clear()
+      db.bodyWeights.clear()
+      db.goals.clear()
+      db.syncQueue.clear()
+      localStorage.removeItem('ft_onboarded')
+      localStorage.removeItem('ft_name')
+      localStorage.removeItem('ft_weight_unit')
+    }
+    localStorage.setItem('ft_user_id', user.id)
+  }, [user.id])
 
   if (!onboarded) {
     return <Onboarding onComplete={() => setOnboarded(true)} />

@@ -1,11 +1,148 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Flame, Zap, Trophy, ChevronRight, Plus } from 'lucide-react'
+import { Flame, Zap, Trophy, ChevronRight, Plus, Share, X } from 'lucide-react'
 import { db, startSession, getRecentSessions, getWorkoutFrequency, getActivePlan, getPlanWithDays, syncServerPlans } from '../db/index.js'
 import { getExerciseById } from '../lib/exercises.js'
 import { api, NetworkError } from '../lib/api.js'
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+function setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString()
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`
+}
+function getCookie(name) {
+  return document.cookie.split('; ').find(r => r.startsWith(name + '='))?.split('=')[1] ?? null
+}
+
+function GptBanner() {
+  const nav = useNavigate()
+  const [show, setShow] = useState(() => getCookie('ft_gpt_banner_closed') !== '1')
+
+  function dismiss() {
+    setCookie('ft_gpt_banner_closed', '1', 365 * 100) // ~100 years
+    setShow(false)
+  }
+
+  if (!show) return null
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(232,255,0,0.08) 0%, rgba(232,255,0,0.03) 100%)',
+      border: '1px solid rgba(232,255,0,0.25)',
+      borderRadius: 12,
+      padding: '14px 14px 14px 16px',
+      marginBottom: 16,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+    }}>
+      <span style={{ fontSize: '1.6rem', flexShrink: 0 }}>🤖</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', marginBottom: 2 }}>
+          Generate your plan with ChatGPT
+        </div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text3)', lineHeight: 1.4, marginBottom: 10 }}>
+          Let AI read your profile, pick exercises, and build a personalised plan saved directly to your account.
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ padding: '7px 16px', fontSize: '0.82rem' }}
+          onClick={() => nav('/profile#gpt-instructions')}
+        >
+          Try it
+        </button>
+      </div>
+      <button onClick={dismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, flexShrink: 0, alignSelf: 'flex-start' }}>
+        <X size={18} />
+      </button>
+    </div>
+  )
+}
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone
+}
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+}
+
+function InstallBanner() {
+  const deferredPromptRef = useRef(null)
+  const [show, setShow] = useState(false)
+  const [iosMode, setIosMode] = useState(false)
+
+  useEffect(() => {
+    if (isStandalone()) return // already installed
+    if (localStorage.getItem('pwa_install_dismissed')) return
+
+    if (isIOS()) {
+      setIosMode(true)
+      setShow(true)
+      return
+    }
+
+    const handler = (e) => {
+      e.preventDefault()
+      deferredPromptRef.current = e
+      setShow(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  function dismiss() {
+    localStorage.setItem('pwa_install_dismissed', '1')
+    setShow(false)
+  }
+
+  async function handleInstall() {
+    if (!deferredPromptRef.current) return
+    deferredPromptRef.current.prompt()
+    const { outcome } = await deferredPromptRef.current.userChoice
+    if (outcome === 'accepted') setShow(false)
+    deferredPromptRef.current = null
+  }
+
+  if (!show) return null
+
+  return (
+    <div style={{
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
+      borderRadius: 12,
+      padding: '12px 14px',
+      marginBottom: 16,
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 12,
+    }}>
+      <img src="/android-chrome-192x192.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1rem', marginBottom: 2 }}>
+          Add FitTrack to your Home Screen
+        </div>
+        {iosMode ? (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text3)', lineHeight: 1.5 }}>
+            Tap the <Share size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong style={{ color: 'var(--text2)' }}>Share</strong> button in Safari, then <strong style={{ color: 'var(--text2)' }}>Add to Home Screen</strong>.
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text3)' }}>
+            Install for offline access and a better experience.
+          </div>
+        )}
+        {!iosMode && (
+          <button className="btn btn-primary" style={{ marginTop: 10, padding: '7px 16px', fontSize: '0.85rem' }} onClick={handleInstall}>
+            Install App
+          </button>
+        )}
+      </div>
+      <button onClick={dismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, flexShrink: 0 }}>
+        <X size={18} />
+      </button>
+    </div>
+  )
+}
 
 function Heatmap({ freq }) {
   const today = new Date()
@@ -38,22 +175,49 @@ export default function Dashboard() {
   useEffect(() => {
     const dow = new Date().getDay()
     setTodayDay(dow)
+    loadAll()
+  }, [])
 
-    // Load plan: IndexedDB first (instant), then sync from server in background
-    getActivePlan().then(p => { if (p) getPlanWithDays(p.id).then(setPlan) })
-    api.get('/api/workouts/plans').then(async json => {
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        const newlyActiveId = await syncServerPlans(json.data)
-        if (newlyActiveId) {
-          getPlanWithDays(newlyActiveId).then(setPlan)
+  async function loadAll() {
+    // Plans — server first, local fallback when offline
+    try {
+      const json = await api.get('/api/workouts/plans')
+      if (json.success && Array.isArray(json.data)) {
+        if (json.data.length > 0) {
+          const newlyActiveId = await syncServerPlans(json.data)
+          if (newlyActiveId) getPlanWithDays(newlyActiveId).then(setPlan)
         }
       }
-    }).catch(e => { if (!(e instanceof NetworkError)) console.warn('plan sync:', e.message) })
+    } catch (e) {
+      if (e instanceof NetworkError) {
+        // Offline — read from local cache
+        const localActive = await getActivePlan()
+        if (localActive) getPlanWithDays(localActive.id).then(setPlan)
+      } else {
+        console.warn('plan sync:', e.message)
+      }
+    }
 
-    getRecentSessions(5).then(setSessions)
+    // Sessions — server first, local fallback
+    try {
+      const json = await api.get('/api/workouts/sessions?limit=5')
+      if (json.success && Array.isArray(json.data)) {
+        setSessions(json.data.map(s => ({
+          id: s.id,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+          durationSec: s.durationSec,
+        })))
+      }
+    } catch (e) {
+      if (e instanceof NetworkError) {
+        getRecentSessions(5).then(setSessions)
+      }
+    }
+
+    // Frequency — always from local (derived from synced sessions)
     getWorkoutFrequency(30).then(f => {
       setFreq(f)
-      // calc streak
       let s = 0, d = new Date()
       while (true) {
         const k = d.toISOString().slice(0,10)
@@ -62,7 +226,7 @@ export default function Dashboard() {
       }
       setStreak(s)
     })
-  }, [])
+  }
 
   const todayPlanDay = plan?.days?.find(d => d.dayOfWeek === todayDay)
 
@@ -76,12 +240,14 @@ export default function Dashboard() {
   return (
     <div className="page">
       {/* Header */}
-      <div style={{marginBottom:24}}>
+      <div style={{marginBottom:16}}>
         <p style={{color:'var(--text3)',fontSize:'0.8rem',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',margin:0}}>
           {new Date().toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric'})}
         </p>
         <h1 style={{margin:'4px 0 0',lineHeight:1}}>Let's<br/><span style={{color:'var(--accent)'}}>Get After It</span></h1>
       </div>
+
+      <InstallBanner />
 
       {/* Stats row */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:20}}>
@@ -134,6 +300,8 @@ export default function Dashboard() {
           <Zap size={18}/> Start Workout
         </button>
       </div>
+
+      <GptBanner />
 
       {/* Activity heatmap */}
       <div className="card" style={{marginBottom:16}}>

@@ -5,7 +5,7 @@ import {
   db, createPlan, getPlanWithDays, getActivePlan, addExerciseToDay, startSession,
   syncServerPlans, getAllPlans, setActivePlan as dbSetActivePlan, deletePlan as dbDeletePlan, renamePlan,
 } from '../db/index.js'
-import { api } from '../lib/api.js'
+import { api, NetworkError } from '../lib/api.js'
 import { getExerciseById, exImageUrl } from '../lib/exercises.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
 import PlanPickerSheet from '../components/PlanPickerSheet.jsx'
@@ -343,19 +343,23 @@ export default function Planner() {
 
   useEffect(() => {
     async function init() {
-      const localActive = await getActivePlan()
-      if (localActive) loadPlan(localActive.id)
-      await refreshAllPlans()
-
+      // Server first — only fall back to local when offline
       try {
         const json = await api.get('/api/workouts/plans')
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const newlyActiveId = await syncServerPlans(json.data)
-          if (newlyActiveId && !localActive) loadPlan(newlyActiveId)
+        if (json.success && Array.isArray(json.data)) {
+          if (json.data.length > 0) {
+            const newlyActiveId = await syncServerPlans(json.data)
+            if (newlyActiveId) await loadPlan(newlyActiveId)
+          }
           await refreshAllPlans()
         }
-      } catch {
-        // offline — skip
+      } catch (e) {
+        if (e instanceof NetworkError) {
+          // Offline — use local cache
+          const localActive = await getActivePlan()
+          if (localActive) await loadPlan(localActive.id)
+          await refreshAllPlans()
+        }
       }
     }
     init()

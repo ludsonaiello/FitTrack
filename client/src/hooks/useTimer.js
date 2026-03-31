@@ -24,14 +24,23 @@ export function useRestTimer() {
         if (prev <= 1) {
           clearInterval(intervalRef.current)
           setRunning(false)
-          // Fire notification
+          // Fire notification via service worker (works on mobile background + iOS PWA)
           if ('Notification' in window && Notification.permission === 'granted') {
-            notifRef.current = new Notification('Rest complete!', {
+            const opts = {
               body: 'Time for your next set 💪',
-              icon: '/pwa-192x192.png',
-              badge: '/pwa-192x192.png',
+              icon: '/android-chrome-192x192.png',
+              badge: '/android-chrome-192x192.png',
               vibrate: [200, 100, 200],
-            })
+              tag: 'rest-timer',
+              renotify: true,
+            }
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.ready
+                .then(reg => reg.showNotification('Rest complete!', opts))
+                .catch(() => { try { notifRef.current = new Notification('Rest complete!', opts) } catch {} })
+            } else {
+              try { notifRef.current = new Notification('Rest complete!', opts) } catch {}
+            }
           }
           return 0
         }
