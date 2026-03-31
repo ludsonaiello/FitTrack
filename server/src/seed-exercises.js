@@ -1,7 +1,7 @@
 import { createRequire } from 'module'
 
 const require = createRequire(import.meta.url)
-const exercises = require('../../client/src/lib/exercises.json')
+const exercises = require('../exercises.json')
 
 const BATCH_SIZE = 50
 
