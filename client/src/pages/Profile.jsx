@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Plus } from 'lucide-react'
+import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Plus, ExternalLink } from 'lucide-react'
 import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
@@ -328,6 +328,53 @@ export default function Profile() {
         {apiKeys.length === 0 && (
           <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:8}}>No keys yet — generate one above.</div>
         )}
+      </div>
+
+      {/* FitTrack Planner GPT — how to connect */}
+      <div className="card" style={{marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <span style={{fontSize:'1rem'}}>🤖</span>
+          <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>FitTrack Planner GPT</div>
+        </div>
+        <div style={{fontSize:'0.8rem',color:'var(--text3)',marginBottom:14,lineHeight:1.6}}>
+          Connect ChatGPT to your account — it will read your goals, browse all 610 exercises and build a personalised plan saved directly here.
+        </div>
+
+        {[
+          { n:1, label:'Generate an API key', detail:'Use the "GPT API Keys" section above — give it any label, then copy the key.' },
+          { n:2, label:'Open FitTrack Planner', detail:'Tap the button below to open the Custom GPT in ChatGPT.' },
+          { n:3, label:'Authorise when prompted', detail:'ChatGPT will ask for an API key — paste the key you copied.' },
+          { n:4, label:'Chat to build your plan', detail:'Tell the GPT your goals, schedule, or equipment. It will browse exercises and create the plan.' },
+          { n:5, label:'Come back to check', detail:'Your new plan appears in the Planner tab automatically once the GPT saves it.' },
+        ].map(({ n, label, detail }) => (
+          <div key={n} style={{display:'flex',gap:12,marginBottom:12,alignItems:'flex-start'}}>
+            <div style={{
+              flexShrink:0, width:24, height:24, borderRadius:'50%',
+              background:'var(--accent)', color:'#000',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontFamily:'Barlow Condensed', fontWeight:800, fontSize:'0.8rem',
+            }}>{n}</div>
+            <div>
+              <div style={{fontFamily:'Barlow Condensed',fontWeight:700,fontSize:'0.95rem'}}>{label}</div>
+              <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:2,lineHeight:1.4}}>{detail}</div>
+            </div>
+          </div>
+        ))}
+
+        <a
+          href="https://chatgpt.com/g/g-69cbfbc4f7948191bb3efca20b21871b-fittrack-planner"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+            width:'100%', padding:'11px 0', borderRadius:10, marginTop:4,
+            background:'var(--accent)', color:'#000',
+            fontFamily:'Barlow Condensed', fontWeight:800, fontSize:'1rem',
+            letterSpacing:'0.05em', textDecoration:'none', border:'none', cursor:'pointer',
+          }}
+        >
+          Open FitTrack Planner <ExternalLink size={14}/>
+        </a>
       </div>
 
       <div style={{textAlign:'center',padding:'20px 0',color:'var(--text3)',fontSize:'0.75rem'}}>
