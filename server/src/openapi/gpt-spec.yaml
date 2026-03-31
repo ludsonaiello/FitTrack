@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: FitTrack GPT API
+  description: |
+    Personal fitness assistant API for FitTrack PWA.
+    Allows a Custom GPT to read your profile, browse the exercise library,
+    and create personalised workout plans saved directly to your account.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:3001/api/gpt
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: API key generated from FitTrack Profile page. Format: ft_<48-hex-chars>
+
+  schemas:
+    Exercise:
+      type: object
+      properties:
+        id:              { type: string, description: "Unique tutorial ID — use this as tutorialId when building plans" }
+        name:            { type: string }
+        type:            { type: string }
+        experienceLevel: { type: string, enum: [BEGINNER, INTERMEDIATE, ADVANCED] }
+        equipment:       { type: array, items: { type: string } }
+        focusArea:       { type: array, items: { type: string } }
+        imageUrl:        { type: string }
+        mediaUrl:        { type: string }
+        tips:            { type: array, items: { type: string } }
+
+    PlanExercise:
+      type: object
+      required: [tutorialId]
+      properties:
+        tutorialId:   { type: string, description: "Exercise ID from /exercises" }
+        targetSets:   { type: integer, default: 3, minimum: 1 }
+        targetReps:   { type: integer, default: 10, minimum: 1 }
+        targetWeight: { type: number, description: "Target weight in kg, optional" }
+        restSeconds:  { type: integer, default: 60 }
+        notes:        { type: string }
+
+    PlanDay:
+      type: object
+      required: [dayOfWeek, exercises]
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: "0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday"
+        name:      { type: string, description: "e.g. Push Day, Legs, Cardio" }
+        exercises:
+          type: array
+          items: { $ref: '#/components/schemas/PlanExercise' }
+          minItems: 1
+
+    WorkoutPlan:
+      type: object
+      properties:
+        id:          { type: string }
+        name:        { type: string }
+        description: { type: string }
+        isActive:    { type: boolean }
+        createdAt:   { type: string, format: date-time }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/PlanDay' }
+
+paths:
+  /profile:
+    get:
+      operationId: getProfile
+      summary: Get user profile, weight history, and goals
+      description: Returns the authenticated user's profile, latest body weight, recent weight history, and active goals.
+      responses:
+        "200":
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                        properties:
+                          id:        { type: string }
+                          email:     { type: string }
+                          name:      { type: string }
+                          createdAt: { type: string, format: date-time }
+                      latestWeight:
+                        description: Most recent body weight entry
+                        type: object
+                        nullable: true
+                        properties:
+                          weight:   { type: number }
+                          unit:     { type: string, enum: [kg, lbs] }
+                          loggedAt: { type: string, format: date-time }
+                      recentWeights:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            weight:   { type: number }
+                            unit:     { type: string }
+                            loggedAt: { type: string, format: date-time }
+                      goals:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:        { type: string, description: "weight | frequency | exercise_pr" }
+                            targetValue: { type: number }
+                            achieved:    { type: boolean }
+
+  /exercises:
+    get:
+      operationId: listExercises
+      summary: Browse the exercise library (610 exercises)
+      description: |
+        Returns a paginated list of exercises. Use filters to find exercises by
+        muscle group, equipment, or experience level.
+        To get all exercises, paginate with limit=200 until total is reached.
+      parameters:
+        - name: q
+          in: query
+          description: Search by name (case-insensitive)
+          schema: { type: string }
+        - name: focus
+          in: query
+          description: "Filter by muscle group, e.g. Chest, Back, Legs, Shoulders, Biceps, Triceps, Core, Glutes"
+          schema: { type: string }
+        - name: equipment
+          in: query
+          description: "Filter by equipment, e.g. Barbell, Dumbbell, Cable, Machine, Bodyweight"
+          schema: { type: string }
+        - name: level
+          in: query
+          description: Filter by experience level
+          schema: { type: string, enum: [BEGINNER, INTERMEDIATE, ADVANCED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          description: Max 200
+          schema: { type: integer, default: 100, maximum: 200 }
+      responses:
+        "200":
+          description: Exercise list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Exercise' }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      page:  { type: integer }
+                      limit: { type: integer }
+
+  /plans:
+    get:
+      operationId: getPlans
+      summary: Get all workout plans for the user
+      description: Returns all workout plans with their days and exercises.
+      responses:
+        "200":
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkoutPlan' }
+
+    post:
+      operationId: createPlan
+      summary: Create a complete workout plan
+      description: |
+        Creates a full nested workout plan (plan + days + exercises) in one request.
+        The new plan becomes the active plan and any previously active plan is deactivated.
+        Use exercise IDs from the /exercises endpoint as tutorialId values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, days]
+              properties:
+                name:
+                  type: string
+                  description: Plan name, e.g. "3-Day Push Pull Legs"
+                description:
+                  type: string
+                  description: Optional description
+                days:
+                  type: array
+                  items: { $ref: '#/components/schemas/PlanDay' }
+                  minItems: 1
+            example:
+              name: "3-Day Push Pull Legs"
+              description: "Intermediate hypertrophy split"
+              days:
+                - dayOfWeek: 1
+                  name: "Push Day"
+                  exercises:
+                    - tutorialId: "some-exercise-id"
+                      targetSets: 4
+                      targetReps: 8
+                      restSeconds: 90
+                - dayOfWeek: 3
+                  name: "Pull Day"
+                  exercises:
+                    - tutorialId: "another-exercise-id"
+                      targetSets: 3
+                      targetReps: 12
+                - dayOfWeek: 5
+                  name: "Leg Day"
+                  exercises:
+                    - tutorialId: "leg-exercise-id"
+                      targetSets: 4
+                      targetReps: 10
+      responses:
+        "201":
+          description: Plan created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/WorkoutPlan' }
+        "400":
+          description: Validation error (missing fields, invalid exercise IDs)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: false }
+                  error:   { type: string }

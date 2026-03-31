@@ -18,6 +18,20 @@ model User {
   sessions     WorkoutSession[]
   bodyWeights  BodyWeight[]
   goals        Goal[]
+  apiKeys      ApiKey[]
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  keyHash   String   @unique  // SHA-256 of the raw key
+  prefix    String            // first 8 chars of raw key for display
+  createdAt DateTime @default(now())
+  lastUsed  DateTime?
+
+  @@index([userId])
 }
 
 model WorkoutPlan {

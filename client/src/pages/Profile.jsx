@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { User, Target, Bell, Trash2, Download, LogOut, Scale } from 'lucide-react'
+import { User, Target, Bell, Trash2, Download, LogOut, Scale, Key, Copy, Eye, EyeOff, Plus } from 'lucide-react'
 import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
+import { api } from '../lib/api.js'
 
 const GOAL_TYPES = [
   {value:'weight',label:'Target Body Weight',unit:'kg'},
@@ -21,6 +22,14 @@ export default function Profile() {
   const [notifPerm, setNotifPerm] = useState(typeof Notification!=='undefined'?Notification.permission:'unsupported')
   const [confirmClear, setConfirmClear] = useState(false)
 
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState([])
+  const [newKeyLabel, setNewKeyLabel] = useState('')
+  const [newKeyResult, setNewKeyResult] = useState(null) // { key, label } — shown once
+  const [keyVisible, setKeyVisible] = useState(false)
+  const [keyError, setKeyError] = useState('')
+  const [confirmRevokeId, setConfirmRevokeId] = useState(null)
+
   useEffect(() => {
     db.goals.toArray().then(setGoals)
     Promise.all([
@@ -28,6 +37,7 @@ export default function Profile() {
       db.exerciseSets.count(),
       db.bodyWeights.count(),
     ]).then(([sessions,sets,weights])=>setDbStats({sessions,sets,weights}))
+    api.get('/api/api-keys').then(r => setApiKeys(r.data || [])).catch(() => {})
   },[])
 
   function saveName() { localStorage.setItem('ft_name', name) }
@@ -53,6 +63,31 @@ export default function Profile() {
     if (typeof Notification === 'undefined') return
     const perm = await Notification.requestPermission()
     setNotifPerm(perm)
+  }
+
+  async function generateApiKey() {
+    setKeyError('')
+    if (!newKeyLabel.trim()) { setKeyError('Enter a label for this key'); return }
+    try {
+      const r = await api.post('/api/api-keys', { label: newKeyLabel.trim() })
+      setNewKeyResult({ key: r.data.key, label: r.data.label })
+      setKeyVisible(false)
+      setNewKeyLabel('')
+      const updated = await api.get('/api/api-keys')
+      setApiKeys(updated.data || [])
+    } catch (e) {
+      setKeyError(e.message)
+    }
+  }
+
+  async function revokeApiKey(id) {
+    try {
+      await api.delete(`/api/api-keys/${id}`)
+      setApiKeys(prev => prev.filter(k => k.id !== id))
+      setConfirmRevokeId(null)
+    } catch (e) {
+      setKeyError(e.message)
+    }
   }
 
   async function clearData() {
@@ -211,6 +246,92 @@ export default function Profile() {
             <Trash2 size={15}/> Clear All
           </button>
         </div>
+      </div>
+
+      {/* API Keys */}
+      <div className="card" style={{marginBottom:12}}>
+        {confirmRevokeId && (
+          <ConfirmModal
+            title="Revoke API key?"
+            message="This key will stop working immediately. Any GPT using it will lose access."
+            confirmLabel="Revoke"
+            onConfirm={() => revokeApiKey(confirmRevokeId)}
+            onCancel={() => setConfirmRevokeId(null)}
+          />
+        )}
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <Key size={16} color="var(--accent)"/>
+          <div style={{fontSize:'0.7rem',fontWeight:700,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>GPT API Keys</div>
+        </div>
+        <div style={{fontSize:'0.8rem',color:'var(--text3)',marginBottom:12,lineHeight:1.5}}>
+          Generate keys to connect a Custom ChatGPT to your FitTrack account.
+        </div>
+
+        {/* Existing keys */}
+        {apiKeys.map(k => (
+          <div key={k.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:'0.85rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.label}</div>
+              <div style={{fontSize:'0.72rem',color:'var(--text3)',fontFamily:'monospace'}}>{k.prefix}••••••••</div>
+              <div style={{fontSize:'0.68rem',color:'var(--text3)'}}>
+                Created {new Date(k.createdAt).toLocaleDateString()}
+                {k.lastUsed ? ` · Last used ${new Date(k.lastUsed).toLocaleDateString()}` : ' · Never used'}
+              </div>
+            </div>
+            <button onClick={() => setConfirmRevokeId(k.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',padding:4}}>
+              <Trash2 size={15}/>
+            </button>
+          </div>
+        ))}
+
+        {/* One-time key reveal */}
+        {newKeyResult && (
+          <div style={{marginTop:12,padding:12,background:'rgba(232,255,0,0.07)',borderRadius:10,border:'1px solid rgba(232,255,0,0.25)'}}>
+            <div style={{fontSize:'0.75rem',fontWeight:700,color:'var(--accent)',marginBottom:6}}>
+              ✓ Key generated for "{newKeyResult.label}" — copy it now, it won't be shown again
+            </div>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <div style={{
+                flex:1, fontFamily:'monospace', fontSize:'0.75rem', color:'var(--text)',
+                background:'var(--surface2)', padding:'8px 10px', borderRadius:8,
+                wordBreak:'break-all', letterSpacing:'0.03em',
+              }}>
+                {keyVisible ? newKeyResult.key : newKeyResult.key.slice(0,10) + '•'.repeat(newKeyResult.key.length - 10)}
+              </div>
+              <button onClick={() => setKeyVisible(v => !v)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',padding:4}}>
+                {keyVisible ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+              <button
+                onClick={() => navigator.clipboard.writeText(newKeyResult.key)}
+                style={{background:'none',border:'none',cursor:'pointer',color:'var(--accent)',padding:4}}>
+                <Copy size={16}/>
+              </button>
+            </div>
+            <button onClick={() => setNewKeyResult(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:'0.72rem',color:'var(--text3)',marginTop:6,padding:0}}>
+              I've saved it — dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Generate new key */}
+        {!newKeyResult && (
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            <input
+              value={newKeyLabel}
+              onChange={e => setNewKeyLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && generateApiKey()}
+              placeholder="Key label, e.g. My GPT"
+              style={{flex:1,fontSize:'0.85rem'}}
+            />
+            <button className="btn btn-primary" onClick={generateApiKey} style={{padding:'8px 12px',fontSize:'0.85rem'}}>
+              <Plus size={14}/> Generate
+            </button>
+          </div>
+        )}
+        {keyError && <div style={{fontSize:'0.75rem',color:'var(--accent2)',marginTop:6}}>{keyError}</div>}
+        {apiKeys.length === 0 && !newKeyResult && (
+          <div style={{fontSize:'0.75rem',color:'var(--text3)',marginTop:8}}>No keys yet — generate one above.</div>
+        )}
       </div>
 
       <div style={{textAlign:'center',padding:'20px 0',color:'var(--text3)',fontSize:'0.75rem'}}>
