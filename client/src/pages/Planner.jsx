@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, ChevronDown, ChevronUp, Trash2, Play, Edit2, Check, X } from 'lucide-react'
-import { db, createPlan, getPlanWithDays, getActivePlan, addExerciseToDay, startSession } from '../db/index.js'
+import { db, createPlan, getPlanWithDays, getActivePlan, addExerciseToDay, startSession, syncServerPlans } from '../db/index.js'
+import { api } from '../lib/api.js'
 import { getExerciseById, exImageUrl } from '../lib/exercises.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
@@ -315,7 +316,26 @@ export default function Planner() {
   const [confirmNewPlan, setConfirmNewPlan] = useState(false)
 
   useEffect(() => {
-    getActivePlan().then(p => { if (p) loadPlan(p.id) })
+    async function init() {
+      // Load whatever is already in IndexedDB first (instant)
+      const localActive = await getActivePlan()
+      if (localActive) loadPlan(localActive.id)
+
+      // Then sync server plans in the background
+      try {
+        const json = await api('/workouts/plans')
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const newlyActiveId = await syncServerPlans(json.data)
+          // If a server plan was synced and nothing was active locally, load it
+          if (newlyActiveId && !localActive) {
+            loadPlan(newlyActiveId)
+          }
+        }
+      } catch {
+        // Offline or error — silently skip sync
+      }
+    }
+    init()
   }, [])
 
   async function loadPlan(id) {
@@ -471,7 +491,16 @@ export default function Planner() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Active Plan</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Active Plan</div>
+            {plan.serverId && (
+              <span style={{
+                fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em',
+                textTransform: 'uppercase', color: '#000',
+                background: 'var(--accent)', padding: '2px 7px', borderRadius: 100,
+              }}>AI</span>
+            )}
+          </div>
           <h2 style={{ margin: '2px 0 0', fontFamily: 'Barlow Condensed' }}>{plan.name}</h2>
         </div>
         <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '8px 12px' }} onClick={handleNewPlan}>

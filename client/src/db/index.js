@@ -30,6 +30,11 @@ db.version(2).stores({
   })
 })
 
+// v3: add serverId index to plans for server-sync (GPT-created plans)
+db.version(3).stores({
+  plans: '++id, name, isActive, createdAt, serverId',
+})
+
 // ── Plan helpers ──────────────────────────────────────────────────────────────
 
 export async function getActivePlan() {
@@ -51,6 +56,61 @@ export async function createPlan(name, description = '') {
   // deactivate all first
   await db.plans.toCollection().modify({ isActive: 0 })
   return db.plans.add({ name, description, isActive: 1, createdAt: new Date().toISOString() })
+}
+
+/**
+ * Syncs server plans into IndexedDB.
+ * Only adds plans that are not already present (matched by serverId).
+ * Returns the local ID of a newly-synced active plan, or null.
+ */
+export async function syncServerPlans(serverPlans) {
+  const localPlans = await db.plans.toArray()
+  const localServerIds = new Set(localPlans.map(p => p.serverId).filter(Boolean))
+
+  let newlyActivePlanId = null
+
+  for (const sp of serverPlans) {
+    if (localServerIds.has(sp.id)) continue
+
+    if (sp.isActive) {
+      await db.plans.toCollection().modify({ isActive: 0 })
+    }
+
+    const localPlanId = await db.plans.add({
+      name: sp.name,
+      description: sp.description ?? '',
+      isActive: sp.isActive ? 1 : 0,
+      serverId: sp.id,
+      createdAt: sp.createdAt ?? new Date().toISOString(),
+    })
+
+    for (const day of (sp.days ?? [])) {
+      const localDayId = await db.planDays.add({
+        planId: localPlanId,
+        dayOfWeek: day.dayOfWeek,
+        name: day.name,
+        restSeconds: 60,
+        order: day.order ?? day.dayOfWeek,
+      })
+
+      for (const ex of (day.exercises ?? [])) {
+        await db.planExercises.add({
+          dayId: localDayId,
+          tutorialId: ex.tutorialId,
+          targetSets: ex.targetSets ?? 3,
+          targetReps: ex.targetReps ?? 10,
+          targetWeight: ex.targetWeight ?? null,
+          restSeconds: ex.restSeconds ?? 60,
+          order: ex.order ?? 0,
+          notes: ex.notes ?? '',
+        })
+      }
+    }
+
+    if (sp.isActive) newlyActivePlanId = localPlanId
+  }
+
+  return newlyActivePlanId
 }
 
 export async function addExerciseToDay(dayId, tutorialId, opts = {}) {
