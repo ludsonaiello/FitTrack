@@ -3,7 +3,7 @@ import { TrendingUp, Target, Dumbbell, Calendar } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { db, getBodyWeightHistory, getWorkoutFrequency, getExercisePR } from '../db/index.js'
 import { allExercises } from '../lib/exercises.js'
-import { api } from '../lib/api.js'
+import { enqueue } from '../db/sync-queue.js'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
 
 function WeightChart({ data }) {
@@ -87,11 +87,11 @@ export default function Progress() {
     if (!w || w < minVal || w > maxVal) return
     const weightKg = toKg(w, unit)
     const loggedAt = new Date().toISOString()
-    await db.bodyWeights.add({ weight: weightKg, unit: 'kg', loggedAt })
+    const localId = await db.bodyWeights.add({ weight: weightKg, unit: 'kg', loggedAt })
     setNewWeight('')
     loadAll()
-    // sync to server (fire and forget — local is source of truth)
-    api.post('/api/progress/weight', { weight: weightKg, unit: 'kg', loggedAt }).catch(() => {})
+    // Queue for sync — will fire when online
+    enqueue('bodyWeights', localId, { weight: weightKg, unit: 'kg', loggedAt })
   }
 
   const monthlyCount = Object.values(freq).reduce((a,b)=>a+b,0)

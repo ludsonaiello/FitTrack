@@ -1,11 +1,8 @@
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
-
 /**
  * @param {import('fastify').FastifyInstance} app
  */
 export default async function progressRoutes(app) {
+  const prisma = app.prisma
   // All progress routes require authentication
   app.addHook('preHandler', app.authenticate)
 
@@ -43,7 +40,7 @@ export default async function progressRoutes(app) {
         type: 'object',
         required: ['weight'],
         properties: {
-          weight:   { type: 'number', minimum: 0 },
+          weight:   { type: 'number', minimum: 0.1 },
           unit:     { type: 'string', enum: ['kg', 'lbs'], default: 'kg' },
           loggedAt: { type: 'string', format: 'date-time' },
         },
@@ -71,11 +68,10 @@ export default async function progressRoutes(app) {
   // DELETE /api/progress/weight/:id
   app.delete('/weight/:id', async (req, reply) => {
     try {
-      const entry = await prisma.bodyWeight.findFirst({
+      const deleted = await prisma.bodyWeight.deleteMany({
         where: { id: req.params.id, userId: req.user.sub },
       })
-      if (!entry) return reply.status(404).send({ success: false, error: 'Entry not found' })
-      await prisma.bodyWeight.delete({ where: { id: req.params.id } })
+      if (deleted.count === 0) return reply.status(404).send({ success: false, error: 'Entry not found' })
       return reply.send({ success: true })
     } catch (e) {
       app.log.error(e)
@@ -106,7 +102,7 @@ export default async function progressRoutes(app) {
         type: 'object',
         required: ['type', 'targetValue'],
         properties: {
-          type:        { type: 'string', enum: ['weight', 'frequency', 'exercise_pr'] },
+          type:        { type: 'string', enum: ['WEIGHT', 'FREQUENCY', 'EXERCISE_PR'] },
           tutorialId:  { type: 'string' },
           targetValue: { type: 'number' },
           targetDate:  { type: 'string', format: 'date-time' },
@@ -158,7 +154,7 @@ export default async function progressRoutes(app) {
         data: {
           ...(achieved !== undefined && { achieved }),
           ...(targetValue !== undefined && { targetValue }),
-          ...(targetDate !== undefined && { targetDate: new Date(targetDate) }),
+          ...(targetDate != null && { targetDate: new Date(targetDate) }),
         },
       })
       return reply.send({ success: true, data: updated })

@@ -1,11 +1,53 @@
 import bcrypt from 'bcryptjs'
-import { PrismaClient } from '@prisma/client'
+import { randomBytes, createHash } from 'crypto'
 
-const prisma = new PrismaClient()
 const isProd = process.env.NODE_ENV === 'production'
+
+/** Access token: 15 minutes */
+const ACCESS_TTL_SEC  = 60 * 15
+/** Refresh token: 7 days */
+const REFRESH_TTL_SEC = 60 * 60 * 24 * 7
+
+/** Generate a raw refresh token, its SHA-256 hash, and its expiry Date */
+function makeRefreshToken() {
+  const raw      = randomBytes(40).toString('hex')               // 80-char hex
+  const hash     = createHash('sha256').update(raw).digest('hex')
+  const expiresAt = new Date(Date.now() + REFRESH_TTL_SEC * 1000)
+  return { raw, hash, expiresAt }
+}
+
+/**
+ * Set both cookies on a reply.
+ * Access token goes to path='/' (readable by all API routes).
+ * Refresh token is scoped to /api/auth/refresh only.
+ */
+function setAuthCookies(reply, accessToken, refreshRaw) {
+  reply
+    .setCookie('token', accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProd,
+      path: '/',
+      maxAge: ACCESS_TTL_SEC,
+    })
+    .setCookie('refreshToken', refreshRaw, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProd,
+      path: '/api/auth',      // scoped — browser only sends on /api/auth/* requests
+      maxAge: REFRESH_TTL_SEC,
+    })
+}
+
+function clearAuthCookies(reply) {
+  reply
+    .clearCookie('token',        { path: '/',          httpOnly: true, sameSite: 'lax', secure: isProd })
+    .clearCookie('refreshToken', { path: '/api/auth',  httpOnly: true, sameSite: 'lax', secure: isProd })
+}
 
 /** @param {import('fastify').FastifyInstance} app */
 export default async function authRoutes(app) {
+  const prisma = app.prisma
 
   // ── Register ───────────────────────────────────────────────────────────────
   app.post('/register', {
@@ -34,16 +76,13 @@ export default async function authRoutes(app) {
         data: { email: email.toLowerCase(), passwordHash, name },
         select: { id: true, email: true, name: true, createdAt: true },
       })
-      const token = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: '30d' })
-      return reply
-        .setCookie('token', token, {
-          httpOnly: true,
-          sameSite: 'lax',
-          secure: isProd,
-          path: '/',
-          maxAge: 60 * 60 * 24 * 30, // 30 days
-        })
-        .send({ success: true, data: user })
+
+      const accessToken    = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+      const { raw, hash, expiresAt } = makeRefreshToken()
+      await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: hash, expiresAt } })
+
+      setAuthCookies(reply, accessToken, raw)
+      return reply.status(201).send({ success: true, data: user })
     } catch (e) {
       app.log.error(e)
       return reply.status(500).send({ success: false, error: 'Registration failed. Please try again.' })
@@ -74,27 +113,74 @@ export default async function authRoutes(app) {
       if (!user || !valid) {
         return reply.status(401).send({ success: false, error: 'Invalid email or password' })
       }
-      const token = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: '30d' })
-      return reply
-        .setCookie('token', token, {
-          httpOnly: true,
-          sameSite: 'lax',
-          secure: isProd,
-          path: '/',
-          maxAge: 60 * 60 * 24 * 30,
-        })
-        .send({ success: true, data: { id: user.id, email: user.email, name: user.name } })
+
+      // Invalidate all existing sessions for this user before issuing a new one
+      await prisma.refreshToken.deleteMany({ where: { userId: user.id } })
+
+      const accessToken = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+      const { raw, hash: rtHash, expiresAt } = makeRefreshToken()
+      await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: rtHash, expiresAt } })
+
+      setAuthCookies(reply, accessToken, raw)
+      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name } })
     } catch (e) {
       app.log.error(e)
       return reply.status(500).send({ success: false, error: 'Login failed. Please try again.' })
     }
   })
 
+  // ── Refresh ────────────────────────────────────────────────────────────────
+  // Called automatically by the client when an access token expires (401).
+  // Issues a new access token + rotates the refresh token.
+  app.post('/refresh', {
+    config: { rateLimit: { max: 30, timeWindow: '15 minutes' } },
+  }, async (req, reply) => {
+    const rawToken = req.cookies?.refreshToken
+    if (!rawToken) {
+      return reply.status(401).send({ success: false, error: 'No refresh token' })
+    }
+
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex')
+
+    try {
+      const stored = await prisma.refreshToken.findUnique({
+        where: { tokenHash },
+        include: { user: { select: { id: true, email: true, name: true } } },
+      })
+
+      if (!stored || stored.expiresAt < new Date()) {
+        // Expired or unknown token — clear cookies and force re-login
+        clearAuthCookies(reply)
+        return reply.status(401).send({ success: false, error: 'Session expired. Please log in again.' })
+      }
+
+      // Rotate: delete old token and create new one atomically
+      const { raw: newRaw, hash: newHash, expiresAt: newExpiry } = makeRefreshToken()
+      const { user } = stored
+      await prisma.$transaction([
+        prisma.refreshToken.delete({ where: { tokenHash } }),
+        prisma.refreshToken.create({ data: { userId: user.id, tokenHash: newHash, expiresAt: newExpiry } }),
+      ])
+
+      const newAccessToken = app.jwt.sign({ sub: user.id, email: user.email }, { expiresIn: `${ACCESS_TTL_SEC}s` })
+
+      setAuthCookies(reply, newAccessToken, newRaw)
+      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name } })
+    } catch (e) {
+      app.log.error(e)
+      return reply.status(500).send({ success: false, error: 'Token refresh failed.' })
+    }
+  })
+
   // ── Logout ─────────────────────────────────────────────────────────────────
-  app.post('/logout', async (_req, reply) => {
-    return reply
-      .clearCookie('token', { path: '/', httpOnly: true, sameSite: 'lax', secure: isProd })
-      .send({ success: true })
+  app.post('/logout', async (req, reply) => {
+    const rawToken = req.cookies?.refreshToken
+    if (rawToken) {
+      const tokenHash = createHash('sha256').update(rawToken).digest('hex')
+      await prisma.refreshToken.deleteMany({ where: { tokenHash } }).catch(() => {})
+    }
+    clearAuthCookies(reply)
+    return reply.send({ success: true })
   })
 
   // ── Me ─────────────────────────────────────────────────────────────────────
@@ -107,10 +193,8 @@ export default async function authRoutes(app) {
         select: { id: true, email: true, name: true, createdAt: true },
       })
       if (!user) {
-        return reply
-          .clearCookie('token', { path: '/' })
-          .status(401)
-          .send({ success: false, error: 'Session expired' })
+        clearAuthCookies(reply)
+        return reply.status(401).send({ success: false, error: 'Session expired' })
       }
       return reply.send({ success: true, data: user })
     } catch (e) {

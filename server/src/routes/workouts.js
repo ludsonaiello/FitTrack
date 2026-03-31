@@ -1,11 +1,8 @@
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
-
 /**
  * @param {import('fastify').FastifyInstance} app
  */
 export default async function workoutRoutes(app) {
+  const prisma = app.prisma
   // All workout routes require authentication
   app.addHook('preHandler', app.authenticate)
 
@@ -33,8 +30,8 @@ export default async function workoutRoutes(app) {
         type: 'object',
         required: ['name'],
         properties: {
-          name:        { type: 'string', minLength: 1 },
-          description: { type: 'string' },
+          name:        { type: 'string', minLength: 1, maxLength: 200 },
+          description: { type: 'string', maxLength: 1000 },
         },
         additionalProperties: false,
       },
@@ -54,11 +51,10 @@ export default async function workoutRoutes(app) {
   // DELETE /api/workouts/plans/:id
   app.delete('/plans/:id', async (req, reply) => {
     try {
-      const plan = await prisma.workoutPlan.findFirst({
+      const deleted = await prisma.workoutPlan.deleteMany({
         where: { id: req.params.id, userId: req.user.sub },
       })
-      if (!plan) return reply.status(404).send({ success: false, error: 'Plan not found' })
-      await prisma.workoutPlan.delete({ where: { id: req.params.id } })
+      if (deleted.count === 0) return reply.status(404).send({ success: false, error: 'Plan not found' })
       return reply.send({ success: true })
     } catch (e) {
       app.log.error(e)
@@ -107,7 +103,7 @@ export default async function workoutRoutes(app) {
         type: 'object',
         properties: {
           planId: { type: 'string' },
-          notes:  { type: 'string' },
+          notes:  { type: 'string', maxLength: 2000 },
           sets: {
             type: 'array',
             items: {
@@ -135,6 +131,11 @@ export default async function workoutRoutes(app) {
   }, async (req, reply) => {
     const { sets = [], planId, notes, startedAt, completedAt, durationSec } = req.body
     try {
+      if (planId) {
+        const plan = await prisma.workoutPlan.findFirst({ where: { id: planId, userId: req.user.sub } })
+        if (!plan) return reply.status(400).send({ success: false, error: 'Invalid planId' })
+      }
+
       const session = await prisma.workoutSession.create({
         data: {
           userId: req.user.sub,

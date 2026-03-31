@@ -11,17 +11,16 @@ import progressRoutes from './routes/progress.js'
 import exerciseRoutes from './routes/exercises.js'
 import apiKeyRoutes from './routes/api-keys.js'
 import gptRoutes from './routes/gpt.js'
-import { seedExercises } from './seed-exercises.js'
 
 const isProd = process.env.NODE_ENV === 'production'
 
 // ── Validate required environment variables ──────────────────────────────────
-if (isProd && !process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET must be set in production')
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set')
   process.exit(1)
 }
-if (isProd && !process.env.DATABASE_URL) {
-  console.error('FATAL: DATABASE_URL must be set in production')
+if (!process.env.DATABASE_URL) {
+  console.error('FATAL: DATABASE_URL environment variable is not set')
   process.exit(1)
 }
 
@@ -42,21 +41,34 @@ await app.register(fastifyHelmet, {
 })
 
 await app.register(fastifyRateLimit, {
-  global: false, // opt-in per route
-  max: 100,
+  global: true,         // apply to all routes by default
+  max: 200,             // 200 req/min per IP — generous for a personal fitness app
   timeWindow: '1 minute',
+  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] ?? req.ip,
 })
 
-const allowedOrigins = [
+// Browser clients that send cookies — must be an exact match
+const browserOrigins = [
   process.env.CLIENT_URL || 'http://localhost:5173',
+]
+
+// GPT Actions and server-to-server callers identify via API key Bearer token,
+// not cookies, so they do not need credentials: true
+const gptOrigins = [
   'https://chat.openai.com',
   'https://chatgpt.com',
 ]
 
 await app.register(fastifyCors, {
   origin: (origin, cb) => {
-    // Allow requests with no origin (e.g. curl, Postman, GPT Actions)
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    // No origin: server-to-server (curl, Postman, GPT Actions).
+    // These use Bearer token auth, not cookies — reject if origin is absent
+    // and the request intends to use credential cookies.
+    // Fastify @cors will still set ACAO header per-route if needed.
+    if (!origin) return cb(null, false)
+    if (browserOrigins.includes(origin) || gptOrigins.includes(origin)) {
+      return cb(null, true)
+    }
     cb(new Error('Not allowed by CORS'), false)
   },
   credentials: true,
@@ -66,7 +78,7 @@ await app.register(fastifyCors, {
 await app.register(fastifyCookie)
 
 await app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET || 'dev-secret-change-in-prod',
+  secret: process.env.JWT_SECRET,
   cookie: { cookieName: 'token', signed: false },
 })
 
@@ -89,12 +101,11 @@ await app.register(gptRoutes,      { prefix: '/api/gpt' })
 
 app.get('/health', () => ({ ok: true, ts: new Date().toISOString() }))
 
-// ── Seed ──────────────────────────────────────────────────────────────────────
-try {
-  await seedExercises(prisma)
-} catch (err) {
-  app.log.warn({ err }, '[seed-exercises] Exercise seeding failed — server will still start')
-}
+// ── Startup cleanup ───────────────────────────────────────────────────────────
+// Prune expired refresh tokens to keep the table bounded
+prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } })
+  .then(r => { if (r.count > 0) app.log.info(`Pruned ${r.count} expired refresh tokens`) })
+  .catch(e => app.log.error({ err: e }, 'Failed to prune expired refresh tokens'))
 
 // ── Listen ────────────────────────────────────────────────────────────────────
 await app.listen({ port: Number(process.env.PORT) || 3001, host: '0.0.0.0' })

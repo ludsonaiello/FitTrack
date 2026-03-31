@@ -6,7 +6,7 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "node src/lib/seed.js",
+    "db:seed": "node src/seed-exercises-cli.js",
     "db:studio": "prisma studio"
   },
   "dependencies": {

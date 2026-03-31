@@ -49,7 +49,23 @@ export default async function gptRoutes(app) {
   })
 
   // ── GET /api/gpt/exercises ────────────────────────────────────────────────
-  app.get('/exercises', auth, async (req) => {
+  app.get('/exercises', {
+    ...auth,
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          q:         { type: 'string', maxLength: 200 },
+          equipment: { type: 'string', maxLength: 100 },
+          focus:     { type: 'string', maxLength: 100 },
+          level:     { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+          page:      { type: 'integer', minimum: 1, default: 1 },
+          limit:     { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (req) => {
     const { q, equipment, focus, level, page = 1, limit = 100 } = req.query
 
     const where = {}

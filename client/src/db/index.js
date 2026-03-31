@@ -3,21 +3,31 @@ import Dexie from 'dexie'
 export const db = new Dexie('FitTrackDB')
 
 db.version(1).stores({
-  // Workout plans
-  plans: '++id, name, isActive, createdAt',
-  planDays: '++id, planId, dayOfWeek, name',
+  plans:         '++id, name, isActive, createdAt',
+  planDays:      '++id, planId, dayOfWeek, name',
   planExercises: '++id, dayId, tutorialId, order',
+  sessions:      '++id, planId, startedAt, completedAt, synced',
+  exerciseSets:  '++id, sessionId, tutorialId, setNumber, loggedAt',
+  bodyWeights:   '++id, loggedAt',
+  goals:         '++id, type, tutorialId, achieved, createdAt',
+  syncQueue:     '++id, type, payload, createdAt',
+})
 
-  // Sessions
-  sessions: '++id, planId, startedAt, completedAt, synced',
-  exerciseSets: '++id, sessionId, tutorialId, setNumber, loggedAt',
+// v2: refine syncQueue schema + add status index on goals for uppercase enum migration
+db.version(2).stores({
+  // syncQueue gets a richer schema: table, localId, status are indexed
+  syncQueue: '++id, table, localId, status, createdAt',
+}).upgrade(async tx => {
+  // Migrate existing syncQueue entries (if any) to new shape — just clear them
+  // since the old format is incompatible and there's no data worth preserving
+  await tx.table('syncQueue').clear()
 
-  // Progress
-  bodyWeights: '++id, loggedAt',
-  goals: '++id, type, tutorialId, achieved, createdAt',
-
-  // Sync queue for offline support
-  syncQueue: '++id, type, payload, createdAt',
+  // Migrate Goal.type from lowercase to uppercase to match server enum
+  await tx.table('goals').toCollection().modify(goal => {
+    if (goal.type === 'weight')      goal.type = 'WEIGHT'
+    else if (goal.type === 'frequency')   goal.type = 'FREQUENCY'
+    else if (goal.type === 'exercise_pr') goal.type = 'EXERCISE_PR'
+  })
 })
 
 // ── Plan helpers ──────────────────────────────────────────────────────────────

@@ -37,8 +37,8 @@ const TOUR_STEPS = [
 ]
 
 const GOAL_TYPES = [
-  { value: 'frequency', label: 'Workouts / week', placeholder: '3' },
-  { value: 'weight',    label: 'Target body weight', placeholder: '75' },
+  { value: 'FREQUENCY', label: 'Workouts / week', placeholder: '3' },
+  { value: 'WEIGHT',    label: 'Target body weight', placeholder: '75' },
 ]
 
 const SETUP_STEPS = 4

@@ -4,7 +4,7 @@ export default async function apiKeyRoutes(app) {
   // List all API keys for the current user (no raw key returned)
   app.get('/', { preHandler: [app.authenticate] }, async (req) => {
     const keys = await app.prisma.apiKey.findMany({
-      where: { userId: req.user.id },
+      where: { userId: req.user.sub },
       select: { id: true, label: true, prefix: true, createdAt: true, lastUsed: true },
       orderBy: { createdAt: 'desc' },
     })
@@ -12,13 +12,26 @@ export default async function apiKeyRoutes(app) {
   })
 
   // Generate a new API key
-  app.post('/', { preHandler: [app.authenticate] }, async (req, reply) => {
-    const { label } = req.body || {}
-    if (!label || typeof label !== 'string' || !label.trim()) {
-      return reply.status(400).send({ success: false, error: 'label is required' })
+  app.post('/', {
+    config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['label'],
+        properties: {
+          label: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+        additionalProperties: false,
+      },
+    },
+    preHandler: [app.authenticate],
+  }, async (req, reply) => {
+    const { label } = req.body
+    if (!label.trim()) {
+      return reply.status(400).send({ success: false, error: 'label cannot be blank' })
     }
 
-    const count = await app.prisma.apiKey.count({ where: { userId: req.user.id } })
+    const count = await app.prisma.apiKey.count({ where: { userId: req.user.sub } })
     if (count >= 5) {
       return reply.status(400).send({ success: false, error: 'Maximum 5 API keys allowed' })
     }
@@ -29,7 +42,7 @@ export default async function apiKeyRoutes(app) {
 
     const apiKey = await app.prisma.apiKey.create({
       data: {
-        userId: req.user.id,
+        userId: req.user.sub,
         label: label.trim(),
         keyHash,
         prefix,
@@ -46,7 +59,7 @@ export default async function apiKeyRoutes(app) {
   // Revoke an API key
   app.delete('/:id', { preHandler: [app.authenticate] }, async (req, reply) => {
     const deleted = await app.prisma.apiKey.deleteMany({
-      where: { id: req.params.id, userId: req.user.id },
+      where: { id: req.params.id, userId: req.user.sub },
     })
     if (deleted.count === 0) {
       return reply.status(404).send({ success: false, error: 'API key not found' })

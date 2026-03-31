@@ -7,80 +7,103 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id           String         @id @default(uuid())
-  email        String         @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  plans        WorkoutPlan[]
-  sessions     WorkoutSession[]
-  bodyWeights  BodyWeight[]
-  goals        Goal[]
-  apiKeys      ApiKey[]
+// ── Enums ─────────────────────────────────────────────────────────────────────
+
+enum GoalType {
+  WEIGHT
+  FREQUENCY
+  EXERCISE_PR
 }
 
-model ApiKey {
+// ── Models ────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  passwordHash   String
+  name           String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  plans          WorkoutPlan[]
+  sessions       WorkoutSession[]
+  bodyWeights    BodyWeight[]
+  goals          Goal[]
+  apiKeys        ApiKey[]
+  refreshTokens  RefreshToken[]
+}
+
+model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label     String
-  keyHash   String   @unique  // SHA-256 of the raw key
-  prefix    String            // first 8 chars of raw key for display
+  tokenHash String   @unique   // SHA-256 of the raw token
+  expiresAt DateTime
   createdAt DateTime @default(now())
-  lastUsed  DateTime?
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model WorkoutPlan {
-  id          String      @id @default(uuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  days        PlanDay[]
-  sessions    WorkoutSession[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  isActive    Boolean     @default(false)
-}
-
-model PlanDay {
-  id          String         @id @default(uuid())
-  planId      String
-  plan        WorkoutPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
-  dayOfWeek   Int            // 0=Sun, 1=Mon, ... 6=Sat
-  name        String         // e.g. "Push Day", "Legs"
-  exercises   PlanExercise[]
-  order       Int            @default(0)
-}
-
-model PlanExercise {
-  id           String    @id @default(uuid())
-  dayId        String
-  day          PlanDay   @relation(fields: [dayId], references: [id], onDelete: Cascade)
-  tutorialId   String    // references Exercise.id from JSON
-  targetSets   Int       @default(3)
-  targetReps   Int       @default(10)
-  targetWeight Float?
-  restSeconds  Int       @default(60)
-  order        Int       @default(0)
-  notes        String?
-}
-
-model WorkoutSession {
   id          String         @id @default(uuid())
   userId      String
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean        @default(false)
+  days        PlanDay[]
+  sessions    WorkoutSession[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([userId, isActive])
+}
+
+model PlanDay {
+  id        String         @id @default(uuid())
+  planId    String
+  plan      WorkoutPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  dayOfWeek Int            // 0=Sun, 1=Mon, ... 6=Sat
+  name      String
+  order     Int            @default(0)
+  exercises PlanExercise[]
+
+  @@index([planId])
+  @@index([planId, dayOfWeek])
+}
+
+model PlanExercise {
+  id           String  @id @default(uuid())
+  dayId        String
+  day          PlanDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  tutorialId   String
+  targetSets   Int     @default(3)
+  targetReps   Int     @default(10)
+  targetWeight Float?
+  restSeconds  Int     @default(60)
+  order        Int     @default(0)
+  notes        String?
+
+  @@index([dayId])
+  @@index([tutorialId])
+}
+
+model WorkoutSession {
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId      String?
-  plan        WorkoutPlan?   @relation(fields: [planId], references: [id])
-  startedAt   DateTime       @default(now())
+  plan        WorkoutPlan? @relation(fields: [planId], references: [id])
+  startedAt   DateTime     @default(now())
   completedAt DateTime?
   durationSec Int?
   notes       String?
   sets        ExerciseSet[]
+
+  @@index([userId])
+  @@index([userId, startedAt])
+  @@index([planId])
 }
 
 model ExerciseSet {
@@ -95,27 +118,51 @@ model ExerciseSet {
   restSec     Int?
   completed   Boolean        @default(true)
   loggedAt    DateTime       @default(now())
+
+  @@index([sessionId])
+  @@index([tutorialId])
+  @@index([sessionId, tutorialId])
 }
 
 model BodyWeight {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  weight    Float
-  unit      String   @default("kg")
-  loggedAt  DateTime @default(now())
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weight   Float
+  unit     String   @default("kg")
+  loggedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, loggedAt])
 }
 
 model Goal {
   id          String    @id @default(uuid())
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String    // "weight", "frequency", "exercise_pr"
+  type        GoalType
   tutorialId  String?
   targetValue Float
   targetDate  DateTime?
   achieved    Boolean   @default(false)
   createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([userId, achieved])
+  @@index([tutorialId])
+}
+
+model ApiKey {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  keyHash   String    @unique
+  prefix    String
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime?
+
+  @@index([userId])
 }
 
 model Exercise {
@@ -131,4 +178,5 @@ model Exercise {
   createdAt       DateTime @default(now())
 
   @@index([experienceLevel])
+  @@index([name])
 }

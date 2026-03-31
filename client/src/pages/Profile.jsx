@@ -5,10 +5,11 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
 import { api } from '../lib/api.js'
+import { enqueue } from '../db/sync-queue.js'
 
 const GOAL_TYPES = [
-  {value:'weight',label:'Target Body Weight',unit:'kg'},
-  {value:'frequency',label:'Workouts per Week',unit:'x/week'},
+  {value:'WEIGHT',label:'Target Body Weight',unit:'kg'},
+  {value:'FREQUENCY',label:'Workouts per Week',unit:'x/week'},
 ]
 
 export default function Profile() {
@@ -44,14 +45,19 @@ export default function Profile() {
 
   async function addGoal() {
     if (!newGoalValue) return
-    const id = await db.goals.add({
+    const payload = {
       type: newGoalType,
       targetValue: parseFloat(newGoalValue),
+    }
+    const id = await db.goals.add({
+      ...payload,
       achieved: false,
       createdAt: new Date().toISOString(),
     })
     setGoals(await db.goals.toArray())
     setNewGoalValue('')
+    // Queue for sync
+    enqueue('goals', id, payload)
   }
 
   async function deleteGoal(id) {
