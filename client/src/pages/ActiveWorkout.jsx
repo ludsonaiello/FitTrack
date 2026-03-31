@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { CheckCircle, X, Plus, Minus, Clock, ChevronLeft, ChevronRight, Trophy, Zap, Trash2 } from 'lucide-react'
 import { db, logSet, completeSession, getSessionWithSets, compareWithLastSession, getLastSetsForExercise } from '../db/index.js'
 import { enqueue } from '../db/sync-queue.js'
+import { api, isOnline } from '../lib/api.js'
 import { getExerciseById, FOCUS_LABELS, exImageUrl } from '../lib/exercises.js'
 import { useRestTimer, useStopwatch } from '../hooks/useTimer.js'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
@@ -217,10 +218,10 @@ export default function ActiveWorkout() {
     setSummary({ duration, totalSets: totalSetsCount, totalVolKg: Math.round(totalVolKg), comparison })
     setFinished(true)
 
-    // Queue session for sync — will be picked up when online
-    getSessionWithSets(sessionId).then(session => {
+    // Sync session to server — directly if online, via queue if offline
+    getSessionWithSets(sessionId).then(async session => {
       if (!session) return
-      enqueue('sessions', sessionId, {
+      const payload = {
         startedAt:   session.startedAt,
         completedAt: session.completedAt,
         durationSec: session.durationSec,
@@ -234,7 +235,17 @@ export default function ActiveWorkout() {
           restSec:     s.restSec ?? undefined,
           completed:   s.completed ?? true,
         })),
-      })
+      }
+
+      if (isOnline()) {
+        try {
+          await api.post('/api/workouts/sessions', payload)
+          return // synced directly — no need to queue
+        } catch {
+          // Fall through to queue on any server/network error
+        }
+      }
+      enqueue('sessions', sessionId, payload)
     }).catch(() => {})
   }
 

@@ -1,5 +1,17 @@
 export const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
+export function isOnline() {
+  return navigator.onLine
+}
+
+/** Thrown when a request fails due to network unavailability (not a server error) */
+export class NetworkError extends Error {
+  constructor() {
+    super('Network unavailable')
+    this.name = 'NetworkError'
+  }
+}
+
 // ── Refresh mutex ─────────────────────────────────────────────────────────────
 // Ensures only one refresh attempt is in-flight at a time.
 // All concurrent requests that hit 401 await the same promise.
@@ -28,12 +40,18 @@ async function attemptRefresh() {
  * @param {boolean} [isRetry]  internal flag — prevents infinite retry loops
  */
 async function request(method, path, body, isRetry = false) {
-  const res = await fetch(BASE + path, {
-    method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
-    credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let res
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      credentials: 'include',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    // fetch() throws TypeError on network failure (offline, DNS, etc.)
+    throw new NetworkError()
+  }
 
   // Auto-refresh on 401, unless this is already a retry or the auth routes themselves
   const isAuthRoute = path.startsWith('/api/auth/')

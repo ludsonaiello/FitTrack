@@ -323,7 +323,7 @@ export default function Planner() {
 
       // Then sync server plans in the background
       try {
-        const json = await api('/workouts/plans')
+        const json = await api.get('/api/workouts/plans')
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           const newlyActiveId = await syncServerPlans(json.data)
           // If a server plan was synced and nothing was active locally, load it

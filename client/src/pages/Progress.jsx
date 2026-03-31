@@ -5,6 +5,7 @@ import { db, getBodyWeightHistory, getWorkoutFrequency, getExercisePR } from '..
 import { allExercises } from '../lib/exercises.js'
 import { enqueue } from '../db/sync-queue.js'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
+import { api, NetworkError } from '../lib/api.js'
 
 function WeightChart({ data }) {
   if (!data.length) return (
@@ -58,8 +59,31 @@ export default function Progress() {
   }, [unit])
 
   async function loadAll() {
-    const weights = await getBodyWeightHistory(90)
+    // Show local data immediately (instant)
+    let weights = await getBodyWeightHistory(90)
     setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
+
+    // Sync from server in background — seeds entries from other devices
+    try {
+      const json = await api.get('/api/progress/weight?limit=90')
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        const localTs = new Set(weights.map(w => w.loggedAt.slice(0, 16)))
+        let added = 0
+        for (const sw of json.data) {
+          const ts = new Date(sw.loggedAt).toISOString().slice(0, 16)
+          if (!localTs.has(ts)) {
+            await db.bodyWeights.add({ weight: sw.weight, unit: sw.unit ?? 'kg', loggedAt: new Date(sw.loggedAt).toISOString() })
+            added++
+          }
+        }
+        if (added > 0) {
+          weights = await getBodyWeightHistory(90)
+          setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
+        }
+      }
+    } catch (e) {
+      if (!(e instanceof NetworkError)) console.warn('weight sync:', e.message)
+    }
     const f = await getWorkoutFrequency(84)
     setFreq(f)
     const sessions = await db.sessions.filter(s=>!!s.completedAt).count()

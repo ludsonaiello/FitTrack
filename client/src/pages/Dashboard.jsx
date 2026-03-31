@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Flame, Zap, Trophy, ChevronRight, Plus } from 'lucide-react'
-import { db, startSession, getRecentSessions, getWorkoutFrequency, getActivePlan, getPlanWithDays } from '../db/index.js'
+import { db, startSession, getRecentSessions, getWorkoutFrequency, getActivePlan, getPlanWithDays, syncServerPlans } from '../db/index.js'
 import { getExerciseById } from '../lib/exercises.js'
+import { api, NetworkError } from '../lib/api.js'
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
@@ -37,7 +38,18 @@ export default function Dashboard() {
   useEffect(() => {
     const dow = new Date().getDay()
     setTodayDay(dow)
+
+    // Load plan: IndexedDB first (instant), then sync from server in background
     getActivePlan().then(p => { if (p) getPlanWithDays(p.id).then(setPlan) })
+    api.get('/api/workouts/plans').then(async json => {
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        const newlyActiveId = await syncServerPlans(json.data)
+        if (newlyActiveId) {
+          getPlanWithDays(newlyActiveId).then(setPlan)
+        }
+      }
+    }).catch(e => { if (!(e instanceof NetworkError)) console.warn('plan sync:', e.message) })
+
     getRecentSessions(5).then(setSessions)
     getWorkoutFrequency(30).then(f => {
       setFreq(f)

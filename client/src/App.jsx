@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom'
-import { Home, Dumbbell, PlayCircle, BarChart2, User } from 'lucide-react'
+import { Home, Dumbbell, PlayCircle, BarChart2, User, WifiOff } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SyncBadge from './components/SyncBadge.jsx'
@@ -18,6 +18,29 @@ import SessionDetail from './pages/SessionDetail'
 import Sessions from './pages/Sessions'
 import Admin from './pages/Admin'
 import Privacy from './pages/Privacy'
+
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine)
+  useEffect(() => {
+    const on = () => setOffline(false)
+    const off = () => setOffline(true)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  if (!offline) return null
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+      background: 'var(--surface2)', borderBottom: '1px solid var(--border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: 8, padding: '6px 16px',
+      fontSize: '0.8rem', fontWeight: 600, color: 'var(--text3)',
+    }}>
+      <WifiOff size={14} /> Offline — showing cached data
+    </div>
+  )
+}
 
 function AdminGuard() {
   const { user } = useAuth()
@@ -69,6 +92,7 @@ function AuthenticatedApp() {
 
   return (
     <>
+      <OfflineBanner />
       <Routes>
         <Route path="/"                          element={<Dashboard />} />
         <Route path="/exercises"                 element={<ExerciseLibrary />} />
