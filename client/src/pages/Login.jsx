@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Dumbbell } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Login() {
@@ -173,6 +174,10 @@ export default function Login() {
 
       <p style={{ marginTop: 24, color: 'var(--text3)', fontSize: '0.8rem', textAlign: 'center' }}>
         Your data stays on-device first.<br />Syncs to server when online.
+      </p>
+      <p style={{ marginTop: 12, color: 'var(--text3)', fontSize: '0.75rem', textAlign: 'center' }}>
+        <Link to="/privacy" style={{ color: 'var(--text3)', textDecoration: 'underline' }}>Privacy Policy</Link>
+        {' · '}4Brazucas, LLC
       </p>
     </div>
   )

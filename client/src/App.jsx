@@ -13,9 +13,11 @@ import ActiveWorkout from './pages/ActiveWorkout'
 import Progress from './pages/Progress'
 import Profile from './pages/Profile'
 import Login from './pages/Login'
+import OAuthLogin from './pages/OAuthLogin'
 import SessionDetail from './pages/SessionDetail'
 import Sessions from './pages/Sessions'
 import Admin from './pages/Admin'
+import Privacy from './pages/Privacy'
 
 function AdminGuard() {
   const { user } = useAuth()
@@ -78,6 +80,9 @@ function AuthenticatedApp() {
         <Route path="/progress"                  element={<Progress />} />
         <Route path="/profile"                   element={<Profile />} />
         <Route path="/admin"                     element={<AdminGuard />} />
+        <Route path="/privacy"                   element={<Privacy />} />
+        {/* OAuth login always accessible — even when authenticated */}
+        <Route path="/oauth-login"               element={<OAuthLogin />} />
         {/* Redirect /login → / when already signed in */}
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*"      element={<Navigate to="/" replace />} />
@@ -95,11 +100,13 @@ function AppRoutes() {
     return <div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />
   }
 
-  // Not authenticated — only /login is accessible
+  // Not authenticated — only /login and /oauth-login are accessible
   if (user === null) {
     return (
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/login"       element={<Login />} />
+        <Route path="/oauth-login" element={<OAuthLogin />} />
+        <Route path="/privacy"     element={<Privacy />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )

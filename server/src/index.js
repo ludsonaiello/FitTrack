@@ -14,6 +14,7 @@ import exerciseRoutes from './routes/exercises.js'
 import apiKeyRoutes from './routes/api-keys.js'
 import gptRoutes from './routes/gpt.js'
 import adminRoutes from './routes/admin.js'
+import oauthRoutes from './routes/oauth.js'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -24,6 +25,10 @@ if (!process.env.JWT_SECRET) {
 }
 if (!process.env.DATABASE_URL) {
   console.error('FATAL: DATABASE_URL environment variable is not set')
+  process.exit(1)
+}
+if (!process.env.OAUTH_CLIENT_ID || !process.env.OAUTH_CLIENT_SECRET) {
+  console.error('FATAL: OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET environment variables are not set')
   process.exit(1)
 }
 
@@ -65,10 +70,13 @@ const gptOrigins = [
 await app.register(fastifyCors, {
   origin: (origin, cb) => {
     // No origin: server-to-server (curl, Postman, GPT Actions).
-    // These use Bearer token auth, not cookies — reject if origin is absent
-    // and the request intends to use credential cookies.
-    // Fastify @cors will still set ACAO header per-route if needed.
-    if (!origin) return cb(null, false)
+    // /oauth/token is a server-to-server call from ChatGPT — allow it without origin.
+    // All other no-origin requests (e.g. cookie-based) are rejected.
+    if (!origin) {
+      const url = req.raw?.url ?? ''
+      if (url === '/oauth/token' || url.startsWith('/oauth/token?')) return cb(null, true)
+      return cb(null, false)
+    }
     if (browserOrigins.includes(origin) || gptOrigins.includes(origin)) {
       return cb(null, true)
     }
@@ -107,6 +115,7 @@ await app.register(exerciseRoutes, { prefix: '/api' })
 await app.register(apiKeyRoutes,   { prefix: '/api/api-keys' })
 await app.register(gptRoutes,      { prefix: '/api/gpt' })
 await app.register(adminRoutes,    { prefix: '/api/admin' })
+await app.register(oauthRoutes,    { prefix: '/oauth' })
 
 app.get('/health', () => ({ ok: true, ts: new Date().toISOString() }))
 

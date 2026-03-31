@@ -48,6 +48,8 @@ services:
       CLIENT_URL: ${CLIENT_URL}
       PORT: ${PORT:-4203}
       NODE_ENV: production
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
       # Uploaded files land here; the web container serves this volume as static assets
       PUBLIC_DIR: /app/public
     volumes:

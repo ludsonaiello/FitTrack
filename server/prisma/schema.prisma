@@ -31,6 +31,7 @@ model User {
   goals          Goal[]
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
+  oauthCodes     OAuthCode[]
 }
 
 model RefreshToken {
@@ -164,6 +165,20 @@ model ApiKey {
   createdAt DateTime  @default(now())
   lastUsed  DateTime?
 
+  @@index([userId])
+}
+
+model OAuthCode {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redirectUri String
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([code])
   @@index([userId])
 }
 

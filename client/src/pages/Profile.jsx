@@ -4,7 +4,7 @@ import { db } from '../db/index.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWeightUnit } from '../hooks/useWeightUnit.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { enqueue } from '../db/sync-queue.js'
 
@@ -388,7 +388,9 @@ export default function Profile() {
 
       <div style={{textAlign:'center',padding:'20px 0',color:'var(--text3)',fontSize:'0.75rem'}}>
         Signed in as <strong style={{color:'var(--text2)'}}>{user?.email}</strong><br/>
-        FitTrack PWA · 610 exercises · Local-first · Works offline
+        FitTrack PWA · 610 exercises · Local-first · Works offline<br/>
+        <Link to="/privacy" style={{color:'var(--text3)',textDecoration:'underline',marginTop:6,display:'inline-block'}}>Privacy Policy</Link>
+        {' · '}4Brazucas, LLC
       </div>
     </div>
   )
