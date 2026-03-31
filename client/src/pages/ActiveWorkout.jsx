@@ -366,12 +366,15 @@ export default function ActiveWorkout() {
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100dvh',background:'var(--bg)'}}>
+      {/* iOS PWA safe area — pushes content below the notch/status bar */}
+      <div style={{height:'env(safe-area-inset-top, 0px)',background:'var(--bg)',flexShrink:0}}/>
+
       {restTimer.running && (
         <RestTimerOverlay seconds={restTimer.seconds} total={restTimer.total} onSkip={restTimer.clear}/>
       )}
 
       {/* Header */}
-      <div style={{padding:'calc(12px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
         <button onClick={()=>setShowFinish(true)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',padding:4}}>
           <X size={22}/>
         </button>

@@ -93,45 +93,38 @@ export default function Progress() {
   }, [unit])
 
   async function loadAll() {
-    // Show local data immediately (instant)
-    let weights = await getBodyWeightHistory(90)
-    setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
-    // Compute BMI series using server-stored height
     const heightCm = user?.heightCm
-    if (heightCm) {
-      setBmiData(weights
-        .map(w => ({ date: w.loggedAt.slice(5,10), bmi: calculateBmi(w.weight, heightCm) }))
-        .filter(d => d.bmi !== null)
-      )
+
+    function applyWeights(weights) {
+      setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
+      if (heightCm) {
+        setBmiData(weights
+          .map(w => ({ date: w.loggedAt.slice(5,10), bmi: calculateBmi(w.weight, heightCm) }))
+          .filter(d => d.bmi !== null)
+        )
+      }
     }
 
-    // Sync from server in background — seeds entries from other devices
+    // Server-first: fetch from server, sync to local, then display
     try {
       const json = await api.get('/api/progress/weight?limit=90')
       if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        const localTs = new Set(weights.map(w => w.loggedAt.slice(0, 16)))
-        let added = 0
+        const existing = await getBodyWeightHistory(90)
+        const localTs = new Set(existing.map(w => w.loggedAt.slice(0, 16)))
         for (const sw of json.data) {
           const ts = new Date(sw.loggedAt).toISOString().slice(0, 16)
           if (!localTs.has(ts)) {
             await db.bodyWeights.add({ weight: sw.weight, unit: sw.unit ?? 'kg', loggedAt: new Date(sw.loggedAt).toISOString() })
-            added++
-          }
-        }
-        if (added > 0) {
-          weights = await getBodyWeightHistory(90)
-          setWeightData(weights.map(w=>({date:w.loggedAt.slice(5,10),weight:Math.round(toDisplay(w.weight, unit) * 10) / 10})))
-          if (heightCm) {
-            setBmiData(weights
-              .map(w => ({ date: w.loggedAt.slice(5,10), bmi: calculateBmi(w.weight, heightCm) }))
-              .filter(d => d.bmi !== null)
-            )
           }
         }
       }
     } catch (e) {
       if (!(e instanceof NetworkError)) console.warn('weight sync:', e.message)
     }
+
+    // Always render from local (includes server-synced + offline entries)
+    const weights = await getBodyWeightHistory(90)
+    applyWeights(weights)
     const f = await getWorkoutFrequency(84)
     setFreq(f)
     const sessions = await db.sessions.filter(s=>!!s.completedAt).count()
@@ -162,8 +155,14 @@ export default function Progress() {
     const localId = await db.bodyWeights.add({ weight: weightKg, unit: 'kg', loggedAt })
     setNewWeight('')
     loadAll()
-    // Queue for sync — will fire when online
-    enqueue('bodyWeights', localId, { weight: weightKg, unit: 'kg', loggedAt })
+    // Try server directly; fall back to queue if offline
+    try {
+      await api.post('/api/progress/weight', { weight: weightKg, unit: 'kg', loggedAt })
+    } catch (e) {
+      if (e instanceof NetworkError) {
+        enqueue('bodyWeights', localId, { weight: weightKg, unit: 'kg', loggedAt })
+      }
+    }
   }
 
   const monthlyCount = Object.values(freq).reduce((a,b)=>a+b,0)
