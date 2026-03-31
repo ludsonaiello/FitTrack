@@ -8,6 +8,8 @@ info:
   version: "1.0.0"
 
 servers:
+  - url: https://ftrack.4brazucas.com/api/gpt
+    description: Production
   - url: http://localhost:3001/api/gpt
     description: Local development
 
