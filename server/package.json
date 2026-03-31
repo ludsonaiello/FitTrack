@@ -1,0 +1,27 @@
+{
+  "name": "fittrack-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node src/lib/seed.js",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@prisma/client": "^6.0.0",
+    "bcryptjs": "^2.4.3",
+    "fastify": "^5.2.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3",
+    "prisma": "^6.0.0"
+  }
+}

@@ -1,0 +1,5 @@
+client/public/images/
+client/public/videos/
+client/node_modules/
+everything-claude-code/
+server/node_modules

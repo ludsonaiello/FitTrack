@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  plans        WorkoutPlan[]
+  sessions     WorkoutSession[]
+  bodyWeights  BodyWeight[]
+  goals        Goal[]
+}
+
+model WorkoutPlan {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  days        PlanDay[]
+  sessions    WorkoutSession[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  isActive    Boolean     @default(false)
+}
+
+model PlanDay {
+  id          String         @id @default(uuid())
+  planId      String
+  plan        WorkoutPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int            // 0=Sun, 1=Mon, ... 6=Sat
+  name        String         // e.g. "Push Day", "Legs"
+  exercises   PlanExercise[]
+  order       Int            @default(0)
+}
+
+model PlanExercise {
+  id           String    @id @default(uuid())
+  dayId        String
+  day          PlanDay   @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  tutorialId   String    // references Exercise.id from JSON
+  targetSets   Int       @default(3)
+  targetReps   Int       @default(10)
+  targetWeight Float?
+  restSeconds  Int       @default(60)
+  order        Int       @default(0)
+  notes        String?
+}
+
+model WorkoutSession {
+  id          String         @id @default(uuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String?
+  plan        WorkoutPlan?   @relation(fields: [planId], references: [id])
+  startedAt   DateTime       @default(now())
+  completedAt DateTime?
+  durationSec Int?
+  notes       String?
+  sets        ExerciseSet[]
+}
+
+model ExerciseSet {
+  id          String         @id @default(uuid())
+  sessionId   String
+  session     WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tutorialId  String
+  setNumber   Int
+  reps        Int?
+  weight      Float?
+  durationSec Int?
+  restSec     Int?
+  completed   Boolean        @default(true)
+  loggedAt    DateTime       @default(now())
+}
+
+model BodyWeight {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weight    Float
+  unit      String   @default("kg")
+  loggedAt  DateTime @default(now())
+}
+
+model Goal {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String    // "weight", "frequency", "exercise_pr"
+  tutorialId  String?
+  targetValue Float
+  targetDate  DateTime?
+  achieved    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+model Exercise {
+  id              String   @id
+  name            String
+  type            String   @default("TUTORIAL")
+  experienceLevel String
+  equipment       String[]
+  focusArea       String[]
+  imageUrl        String
+  mediaUrl        String
+  tips            String[]
+  createdAt       DateTime @default(now())
+
+  @@index([experienceLevel])
+}

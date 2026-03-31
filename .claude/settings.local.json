@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -Command \"& 'C:\\\\Program Files\\\\PostgreSQL\\\\16\\\\bin\\\\psql.exe' -U postgres -c \\\\\"CREATE DATABASE fittrack OWNER fittrack\\\\\" 2>&1\")",
+      "Bash(powershell.exe -Command \"& 'C:\\\\Program Files\\\\PostgreSQL\\\\16\\\\bin\\\\psql.exe' -U postgres -c \\\\\"GRANT ALL PRIVILEGES ON DATABASE fittrack TO fittrack\\\\\" 2>&1\")"
+    ]
+  }
+}
