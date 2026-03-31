@@ -24,5 +24,4 @@ COPY package.json ./
 
 EXPOSE 4203
 
-# Run pending migrations then start the server
-CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
+CMD ["node", "src/index.js"]

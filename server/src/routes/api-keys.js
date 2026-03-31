@@ -1,11 +1,11 @@
 import { randomBytes, createHash } from 'crypto'
 
 export default async function apiKeyRoutes(app) {
-  // List all API keys for the current user (no raw key returned)
+  // List all API keys for the current user
   app.get('/', { preHandler: [app.authenticate] }, async (req) => {
     const keys = await app.prisma.apiKey.findMany({
       where: { userId: req.user.sub },
-      select: { id: true, label: true, prefix: true, createdAt: true, lastUsed: true },
+      select: { id: true, label: true, prefix: true, rawKey: true, createdAt: true, lastUsed: true },
       orderBy: { createdAt: 'desc' },
     })
     return { success: true, data: keys }
@@ -45,15 +45,13 @@ export default async function apiKeyRoutes(app) {
         userId: req.user.sub,
         label: label.trim(),
         keyHash,
+        rawKey,
         prefix,
       },
-      select: { id: true, label: true, prefix: true, createdAt: true },
+      select: { id: true, label: true, prefix: true, rawKey: true, createdAt: true },
     })
 
-    return reply.status(201).send({
-      success: true,
-      data: { ...apiKey, key: rawKey }, // raw key shown ONCE
-    })
+    return reply.status(201).send({ success: true, data: apiKey })
   })
 
   // Revoke an API key

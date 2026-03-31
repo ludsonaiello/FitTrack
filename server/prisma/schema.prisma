@@ -158,6 +158,7 @@ model ApiKey {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   label     String
   keyHash   String    @unique
+  rawKey    String?
   prefix    String
   createdAt DateTime  @default(now())
   lastUsed  DateTime?

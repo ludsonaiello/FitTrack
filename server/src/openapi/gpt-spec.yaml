@@ -31,7 +31,6 @@ components:
         name:            { type: string }
         type:            { type: string }
         experienceLevel: { type: string, enum: [BEGINNER, INTERMEDIATE, ADVANCED] }
-	schema: 	 { type: string, enum: [BEGINNER, INTERMEDIATE, ADVANCED] }
         equipment:       { type: array, items: { type: string } }
         focusArea:       { type: array, items: { type: string } }
         imageUrl:        { type: string }
