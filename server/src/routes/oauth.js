@@ -40,7 +40,7 @@ export default async function oauthRoutes(app) {
     }
 
     const params = new URLSearchParams({ client_id, redirect_uri, state: state ?? '', response_type })
-    return reply.redirect(302, `/oauth-login?${params.toString()}`)
+    return reply.status(302).redirect(`/oauth-login?${params.toString()}`)
   })
 
   // POST /oauth/authorize — called by the React login page after user submits credentials
