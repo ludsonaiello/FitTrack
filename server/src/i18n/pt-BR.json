@@ -1,0 +1,54 @@
+{
+  "auth": {
+    "invalid_credentials": "E-mail ou senha incorretos.",
+    "email_taken": "Já existe uma conta com esse e-mail.",
+    "not_found": "Usuário não encontrado.",
+    "unauthorized": "Você precisa estar logado.",
+    "forbidden": "Você não tem permissão para realizar esta ação.",
+    "token_expired": "Sua sessão expirou. Faça login novamente.",
+    "token_invalid": "Token inválido.",
+    "refresh_required": "Faça login novamente.",
+    "session_expired": "Sessão expirada. Faça login novamente.",
+    "no_refresh_token": "Nenhum token de atualização fornecido.",
+    "registration_failed": "Falha no cadastro. Tente novamente.",
+    "login_failed": "Falha no login. Tente novamente.",
+    "token_refresh_failed": "Falha ao renovar o token.",
+    "fetch_user_failed": "Não foi possível buscar os dados do usuário.",
+    "update_profile_failed": "Não foi possível atualizar o perfil.",
+    "delete_account_failed": "Falha ao excluir a conta. Tente novamente."
+  },
+  "validation": {
+    "email_required": "O e-mail é obrigatório.",
+    "password_required": "A senha é obrigatória.",
+    "name_required": "O nome é obrigatório.",
+    "password_too_short": "A senha deve ter pelo menos 8 caracteres.",
+    "invalid_language": "O idioma deve ser 'en' ou 'pt-BR'."
+  },
+  "workouts": {
+    "plan_not_found": "Plano de treino não encontrado.",
+    "session_not_found": "Sessão não encontrada.",
+    "exercise_not_found": "Exercício não encontrado.",
+    "invalid_plan_id": "ID do plano inválido.",
+    "fetch_plans_failed": "Não foi possível buscar os planos.",
+    "create_plan_failed": "Não foi possível criar o plano.",
+    "update_plan_failed": "Não foi possível atualizar o plano.",
+    "delete_plan_failed": "Não foi possível excluir o plano.",
+    "fetch_sessions_failed": "Não foi possível buscar as sessões.",
+    "save_session_failed": "Não foi possível salvar a sessão."
+  },
+  "progress": {
+    "goal_not_found": "Meta não encontrada.",
+    "weight_not_found": "Registro de peso não encontrado.",
+    "entry_not_found": "Registro não encontrado.",
+    "fetch_weight_failed": "Não foi possível buscar os registros de peso.",
+    "log_weight_failed": "Não foi possível registrar o peso.",
+    "delete_entry_failed": "Não foi possível excluir o registro.",
+    "fetch_goals_failed": "Não foi possível buscar as metas.",
+    "create_goal_failed": "Não foi possível criar a meta.",
+    "update_goal_failed": "Não foi possível atualizar a meta."
+  },
+  "server": {
+    "internal_error": "Ocorreu um erro interno no servidor.",
+    "not_found": "O recurso solicitado não foi encontrado."
+  }
+}

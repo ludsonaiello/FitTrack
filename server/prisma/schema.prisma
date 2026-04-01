@@ -27,6 +27,7 @@ model User {
   sex            String?         // "male" | "female" | "unspecified"
   heightCm       Float?
   heightUnit     String          @default("cm")
+  language       String          @default("en")
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   plans          WorkoutPlan[]

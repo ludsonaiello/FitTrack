@@ -1,0 +1,1 @@
+DB migration complete. Backend may proceed. Language field added to User model as String @default("en"). Migration file: 20260331000000_add_user_language.

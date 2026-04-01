@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { randomBytes, createHash } from 'crypto'
+import { t, resolveLanguage } from '../i18n/index.js'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -68,11 +69,12 @@ export default async function authRoutes(app) {
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     const { email, password, name } = req.body
     try {
       const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
       if (existing) {
-        return reply.status(409).send({ success: false, error: 'An account with that email already exists' })
+        return reply.status(409).send({ success: false, error: t(lang, 'auth.email_taken') })
       }
       const passwordHash = await bcrypt.hash(password, 12)
       const user = await prisma.user.create({
@@ -84,11 +86,16 @@ export default async function authRoutes(app) {
       const { raw, hash, expiresAt, ttl } = makeRefreshToken(false)
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: hash, expiresAt } })
 
+      // Fetch full user object so client gets onboarded + profile fields
+      const fullUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true, language: true },
+      })
       setAuthCookies(reply, accessToken, raw, ttl)
-      return reply.status(201).send({ success: true, data: user })
+      return reply.status(201).send({ success: true, data: fullUser })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Registration failed. Please try again.' })
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.registration_failed') })
     }
   })
 
@@ -108,6 +115,7 @@ export default async function authRoutes(app) {
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     const { email, password, rememberMe = false } = req.body
     try {
       const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
@@ -115,7 +123,7 @@ export default async function authRoutes(app) {
       const hash = user?.passwordHash ?? '$2a$12$invalidhashtopreventtimingattack'
       const valid = await bcrypt.compare(password, hash)
       if (!user || !valid) {
-        return reply.status(401).send({ success: false, error: 'Invalid email or password' })
+        return reply.status(401).send({ success: false, error: t(lang, 'auth.invalid_credentials') })
       }
 
       // Invalidate all existing sessions for this user before issuing a new one
@@ -125,11 +133,16 @@ export default async function authRoutes(app) {
       const { raw, hash: rtHash, expiresAt, ttl } = makeRefreshToken(rememberMe)
       await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: rtHash, expiresAt } })
 
+      // Fetch full profile so client gets onboarded + body stats fields
+      const fullUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true, language: true },
+      })
       setAuthCookies(reply, accessToken, raw, ttl)
-      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
+      return reply.send({ success: true, data: fullUser })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Login failed. Please try again.' })
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.login_failed') })
     }
   })
 
@@ -139,9 +152,10 @@ export default async function authRoutes(app) {
   app.post('/refresh', {
     config: { rateLimit: { max: 30, timeWindow: '15 minutes' } },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     const rawToken = req.cookies?.refreshToken
     if (!rawToken) {
-      return reply.status(401).send({ success: false, error: 'No refresh token' })
+      return reply.status(401).send({ success: false, error: t(lang, 'auth.no_refresh_token') })
     }
 
     const tokenHash = createHash('sha256').update(rawToken).digest('hex')
@@ -155,7 +169,7 @@ export default async function authRoutes(app) {
       if (!stored || stored.expiresAt < new Date()) {
         // Expired or unknown token — clear cookies and force re-login
         clearAuthCookies(reply)
-        return reply.status(401).send({ success: false, error: 'Session expired. Please log in again.' })
+        return reply.status(401).send({ success: false, error: t(lang, 'auth.session_expired') })
       }
 
       // Rotate: delete old token and create new one atomically
@@ -168,11 +182,31 @@ export default async function authRoutes(app) {
 
       const newAccessToken = app.jwt.sign({ sub: user.id, email: user.email, isAdmin: user.isAdmin }, { expiresIn: `${ACCESS_TTL_SEC}s` })
 
+      // Fetch full profile so refresh also returns onboarded + body stats
+      const fullUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true, language: true },
+      })
       setAuthCookies(reply, newAccessToken, newRaw)
-      return reply.send({ success: true, data: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
+      return reply.send({ success: true, data: fullUser })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Token refresh failed.' })
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.token_refresh_failed') })
+    }
+  })
+
+  // ── Delete account ─────────────────────────────────────────────────────────
+  app.delete('/me', {
+    preHandler: [app.authenticate],
+  }, async (req, reply) => {
+    const lang = resolveLanguage(req)
+    try {
+      await prisma.user.delete({ where: { id: req.user.sub } })
+      clearAuthCookies(reply)
+      return reply.send({ success: true })
+    } catch (e) {
+      app.log.error(e)
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.delete_account_failed') })
     }
   })
 
@@ -191,19 +225,20 @@ export default async function authRoutes(app) {
   app.get('/me', {
     preHandler: [app.authenticate],
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const user = await prisma.user.findUnique({
         where: { id: req.user.sub },
-        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true, language: true },
       })
       if (!user) {
         clearAuthCookies(reply)
-        return reply.status(401).send({ success: false, error: 'Session expired' })
+        return reply.status(401).send({ success: false, error: t(lang, 'auth.session_expired') })
       }
       return reply.send({ success: true, data: user })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to fetch user' })
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.fetch_user_failed') })
     }
   })
 
@@ -219,28 +254,37 @@ export default async function authRoutes(app) {
           heightCm:   { type: 'number', minimum: 50, maximum: 275 },
           heightUnit: { type: 'string', enum: ['cm', 'ft'] },
           onboarded:  { type: 'boolean' },
+          language:   { type: 'string' },
         },
         additionalProperties: false,
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
-      const { name, sex, heightCm, heightUnit, onboarded } = req.body
+      const { name, sex, heightCm, heightUnit, onboarded, language } = req.body
+
+      if (language !== undefined && language !== 'en' && language !== 'pt-BR') {
+        return reply.status(400).send({ success: false, error: t(lang, 'validation.invalid_language') })
+      }
+
       const data = {}
       if (name      !== undefined) data.name      = name
       if (sex       !== undefined) data.sex        = sex
       if (heightCm  !== undefined) data.heightCm  = heightCm
       if (heightUnit !== undefined) data.heightUnit = heightUnit
       if (onboarded !== undefined) data.onboarded = onboarded
+      if (language  !== undefined) data.language  = language
+
       const updated = await prisma.user.update({
         where: { id: req.user.sub },
         data,
-        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true },
+        select: { id: true, email: true, name: true, isAdmin: true, createdAt: true, onboarded: true, sex: true, heightCm: true, heightUnit: true, language: true },
       })
       return reply.send({ success: true, data: updated })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to update profile' })
+      return reply.status(500).send({ success: false, error: t(lang, 'auth.update_profile_failed') })
     }
   })
 }

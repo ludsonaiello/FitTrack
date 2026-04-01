@@ -290,7 +290,8 @@ export async function logBodyWeight(weight, unit = 'kg') {
   return db.bodyWeights.add({ weight, unit, loggedAt: new Date().toISOString() })
 }
 
-export async function getBodyWeightHistory(days = 90) {
+export async function getBodyWeightHistory(days = 0) {
+  if (!days) return db.bodyWeights.orderBy('loggedAt').toArray()
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   return db.bodyWeights.where('loggedAt').above(since).sortBy('loggedAt')
 }
@@ -302,6 +303,45 @@ export async function getExercisePR(tutorialId) {
     const vol = (s.weight ?? 0) * (s.reps ?? 1)
     return vol > (best.weight ?? 0) * (best.reps ?? 1) ? s : best
   }, sets[0])
+}
+
+export async function getAllPRs() {
+  const allSets = await db.exerciseSets.toArray()
+  if (!allSets.length) return []
+
+  // Group sets by tutorialId
+  const byExercise = {}
+  for (const s of allSets) {
+    if (!byExercise[s.tutorialId]) byExercise[s.tutorialId] = []
+    byExercise[s.tutorialId].push(s)
+  }
+
+  const prs = []
+  for (const [tutorialId, sets] of Object.entries(byExercise)) {
+    // Best set by volume (weight × reps), fallback to most reps for bodyweight
+    const best = sets.reduce((b, s) => {
+      const vol = (s.weight ?? 0) * (s.reps ?? 1)
+      const bVol = (b.weight ?? 0) * (b.reps ?? 1)
+      return vol > bVol ? s : b
+    }, sets[0])
+
+    // Most recent set date for "last logged"
+    const sortedByDate = [...sets].sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
+    const lastLoggedAt = sortedByDate[0].loggedAt
+
+    prs.push({
+      tutorialId,
+      weight: best.weight,
+      reps: best.reps,
+      durationSec: best.durationSec,
+      volume: (best.weight ?? 0) * (best.reps ?? 1),
+      achievedAt: best.loggedAt,
+      lastLoggedAt,
+      totalSets: sets.length,
+    })
+  }
+
+  return prs
 }
 
 export async function getWorkoutFrequency(days = 30) {
@@ -316,6 +356,34 @@ export async function getWorkoutFrequency(days = 30) {
     counts[day] = (counts[day] ?? 0) + 1
   })
   return counts
+}
+
+/**
+ * Returns a map of dateKey → { count, sessions: [{ id, durationSec, exerciseNames[] }] }
+ * for all completed sessions in the last `days` days.
+ */
+export async function getActivityCalendar(days = 30) {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  const sessions = await db.sessions
+    .where('startedAt').above(since)
+    .filter(s => s.completedAt != null)
+    .toArray()
+
+  const result = {}
+  for (const session of sessions) {
+    const day = session.startedAt.slice(0, 10)
+    const sets = await db.exerciseSets.where('sessionId').equals(session.id).toArray()
+    const seen = new Set()
+    sets.forEach(s => seen.add(s.tutorialId))
+    if (!result[day]) result[day] = { count: 0, sessions: [] }
+    result[day].count += 1
+    result[day].sessions.push({
+      id: session.id,
+      durationSec: session.durationSec ?? 0,
+      tutorialIds: [...seen],
+    })
+  }
+  return result
 }
 
 // ── Exercise history (for per-exercise progress charts) ───────────────────────
@@ -400,6 +468,72 @@ export async function getExerciseSessionHistory(tutorialId, limit = 50) {
 export async function deleteSession(sessionId) {
   await db.exerciseSets.where('sessionId').equals(sessionId).delete()
   await db.sessions.delete(sessionId)
+}
+
+/**
+ * Merges sessions received from the server into the local IndexedDB.
+ * Server is the source of truth: if a session exists on the server but not
+ * locally (matched by startedAt minute-precision), it gets added.
+ * Already-local sessions are left untouched (prevents overwriting in-progress data).
+ */
+export async function mergeServerSessions(serverSessions) {
+  if (!Array.isArray(serverSessions) || !serverSessions.length) return
+
+  const localSessions = await db.sessions.toArray()
+  const localByMinute = new Map()
+  for (const s of localSessions) {
+    if (s.startedAt) localByMinute.set(s.startedAt.slice(0, 16), s)
+  }
+
+  for (const ss of serverSessions) {
+    const minuteKey = new Date(ss.startedAt).toISOString().slice(0, 16)
+    if (localByMinute.has(minuteKey)) continue // already have it locally
+
+    const sessionId = await db.sessions.add({
+      planId: null,
+      startedAt: new Date(ss.startedAt).toISOString(),
+      completedAt: ss.completedAt ? new Date(ss.completedAt).toISOString() : null,
+      durationSec: ss.durationSec ?? null,
+      notes: ss.notes ?? null,
+      synced: 1,
+    })
+
+    if (Array.isArray(ss.sets) && ss.sets.length > 0) {
+      await db.exerciseSets.bulkAdd(ss.sets.map((s, i) => ({
+        sessionId,
+        tutorialId: s.tutorialId,
+        setNumber: s.setNumber ?? i + 1,
+        reps: s.reps ?? null,
+        weight: s.weight ?? null,
+        durationSec: s.durationSec ?? null,
+        restSec: s.restSec ?? null,
+        completed: s.completed ?? true,
+        loggedAt: new Date(ss.startedAt).toISOString(),
+      })))
+    }
+  }
+}
+
+/**
+ * Merges body weight entries from the server into local IndexedDB.
+ * Server wins when a timestamp (minute-precision) is missing locally.
+ */
+export async function mergeServerWeights(serverWeights) {
+  if (!Array.isArray(serverWeights) || !serverWeights.length) return
+
+  const existing = await getBodyWeightHistory()
+  const localMinutes = new Set(existing.map(w => w.loggedAt.slice(0, 16)))
+
+  for (const sw of serverWeights) {
+    const minuteKey = new Date(sw.loggedAt).toISOString().slice(0, 16)
+    if (!localMinutes.has(minuteKey)) {
+      await db.bodyWeights.add({
+        weight: sw.weight,
+        unit: sw.unit ?? 'kg',
+        loggedAt: new Date(sw.loggedAt).toISOString(),
+      })
+    }
+  }
 }
 
 // ── Session comparison (for post-workout summary) ─────────────────────────────

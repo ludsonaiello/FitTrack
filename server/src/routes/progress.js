@@ -1,3 +1,5 @@
+import { t, resolveLanguage } from '../i18n/index.js'
+
 /**
  * @param {import('fastify').FastifyInstance} app
  */
@@ -14,12 +16,13 @@ export default async function progressRoutes(app) {
       querystring: {
         type: 'object',
         properties: {
-          limit: { type: 'integer', minimum: 1, maximum: 365, default: 90 },
+          limit: { type: 'integer', minimum: 1, maximum: 3650, default: 3650 },
         },
         additionalProperties: false,
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const entries = await prisma.bodyWeight.findMany({
         where: { userId: req.user.sub },
@@ -29,7 +32,7 @@ export default async function progressRoutes(app) {
       return reply.send({ success: true, data: entries })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to fetch weight entries' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.fetch_weight_failed') })
     }
   })
 
@@ -49,6 +52,7 @@ export default async function progressRoutes(app) {
     },
   }, async (req, reply) => {
     const { weight, unit = 'kg', loggedAt } = req.body
+    const lang = resolveLanguage(req)
     try {
       const entry = await prisma.bodyWeight.create({
         data: {
@@ -61,21 +65,22 @@ export default async function progressRoutes(app) {
       return reply.status(201).send({ success: true, data: entry })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to log weight' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.log_weight_failed') })
     }
   })
 
   // DELETE /api/progress/weight/:id
   app.delete('/weight/:id', async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const deleted = await prisma.bodyWeight.deleteMany({
         where: { id: req.params.id, userId: req.user.sub },
       })
-      if (deleted.count === 0) return reply.status(404).send({ success: false, error: 'Entry not found' })
+      if (deleted.count === 0) return reply.status(404).send({ success: false, error: t(lang, 'progress.entry_not_found') })
       return reply.send({ success: true })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to delete entry' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.delete_entry_failed') })
     }
   })
 
@@ -83,6 +88,7 @@ export default async function progressRoutes(app) {
 
   // GET /api/progress/goals
   app.get('/goals', async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const goals = await prisma.goal.findMany({
         where: { userId: req.user.sub },
@@ -91,7 +97,7 @@ export default async function progressRoutes(app) {
       return reply.send({ success: true, data: goals })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to fetch goals' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.fetch_goals_failed') })
     }
   })
 
@@ -112,6 +118,7 @@ export default async function progressRoutes(app) {
     },
   }, async (req, reply) => {
     const { type, tutorialId, targetValue, targetDate } = req.body
+    const lang = resolveLanguage(req)
     try {
       const goal = await prisma.goal.create({
         data: {
@@ -125,7 +132,7 @@ export default async function progressRoutes(app) {
       return reply.status(201).send({ success: true, data: goal })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to create goal' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.create_goal_failed') })
     }
   })
 
@@ -143,11 +150,12 @@ export default async function progressRoutes(app) {
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const goal = await prisma.goal.findFirst({
         where: { id: req.params.id, userId: req.user.sub },
       })
-      if (!goal) return reply.status(404).send({ success: false, error: 'Goal not found' })
+      if (!goal) return reply.status(404).send({ success: false, error: t(lang, 'progress.goal_not_found') })
       const { achieved, targetValue, targetDate } = req.body
       const updated = await prisma.goal.update({
         where: { id: req.params.id },
@@ -160,7 +168,7 @@ export default async function progressRoutes(app) {
       return reply.send({ success: true, data: updated })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to update goal' })
+      return reply.status(500).send({ success: false, error: t(lang, 'progress.update_goal_failed') })
     }
   })
 }

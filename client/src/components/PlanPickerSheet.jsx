@@ -1,17 +1,19 @@
 import { Check, Trash2, X, Plus, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Bottom sheet listing all saved plans.
  * @param {{ plans: Array, activePlanId: number, switching: boolean, onSelect: (id: number) => void, onDelete: (id: number) => void, onCreate: () => void, onClose: () => void }} props
  */
 export default function PlanPickerSheet({ plans, activePlanId, switching, onSelect, onDelete, onCreate, onClose }) {
+  const { t } = useTranslation()
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()} style={{ maxHeight: '80dvh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexShrink: 0 }}>
           <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '1.2rem' }}>
-            My Plans
+            {t('planner.my_plans')}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4 }}>
             <X size={20} />
@@ -22,7 +24,7 @@ export default function PlanPickerSheet({ plans, activePlanId, switching, onSele
         <div style={{ overflowY: 'auto', flex: 1, marginBottom: 12 }}>
           {plans.length === 0 && (
             <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text3)', fontSize: '0.9rem' }}>
-              No saved plans yet
+              {t('planner.no_saved_plans')}
             </div>
           )}
           {plans.map(p => {
@@ -72,7 +74,7 @@ export default function PlanPickerSheet({ plans, activePlanId, switching, onSele
                       }}>AI</span>
                     )}
                     {isActive && (
-                      <span style={{ fontSize: '0.65rem', color: 'var(--accent)', fontWeight: 600 }}>Active</span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--accent)', fontWeight: 600 }}>{t('planner.active')}</span>
                     )}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: 1 }}>
@@ -95,7 +97,7 @@ export default function PlanPickerSheet({ plans, activePlanId, switching, onSele
 
         {/* Create new */}
         <button className="btn btn-ghost" style={{ width: '100%', flexShrink: 0 }} onClick={onCreate}>
-          <Plus size={16} /> New Plan
+          <Plus size={16} /> {t('planner.new_plan')}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Pause, Plus, Lightbulb, Calendar, Dumbbell, BookOpen } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { getExerciseById, EQUIPMENT_LABELS, FOCUS_LABELS, LEVEL_LABELS, exImageUrl, exVideoUrl } from '../lib/exercises.js'
 import { getExerciseHistory, getExercisePlans, getExerciseSessionHistory } from '../db/index.js'
@@ -17,6 +18,7 @@ const SECTION_LABEL = {
 // ── Active Plans ──────────────────────────────────────────────────────────────
 
 function ActivePlans({ tutorialId }) {
+  const { t } = useTranslation()
   const [pairs, setPairs] = useState([])
 
   useEffect(() => {
@@ -29,7 +31,7 @@ function ActivePlans({ tutorialId }) {
     <div className="card" style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <BookOpen size={16} color="var(--accent)" />
-        <div style={SECTION_LABEL}>Active in plans</div>
+        <div style={SECTION_LABEL}>{t('exercises.active_in_plans')}</div>
       </div>
       {pairs.map(({ plan, day }, i) => (
         <div key={i} style={{
@@ -54,7 +56,7 @@ function ActivePlans({ tutorialId }) {
           </div>
           {plan.isActive ? (
             <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', background: 'rgba(232,255,0,0.1)', padding: '2px 8px', borderRadius: 100 }}>
-              ACTIVE
+              {t('planner.active').toUpperCase()}
             </span>
           ) : null}
         </div>
@@ -66,6 +68,8 @@ function ActivePlans({ tutorialId }) {
 // ── Exercise History (chart + list) ──────────────────────────────────────────
 
 function ExerciseHistory({ tutorialId }) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language
   const [history, setHistory] = useState([])
   const [sessions, setSessions] = useState([])
   const [showAll, setShowAll] = useState(false)
@@ -95,7 +99,7 @@ function ExerciseHistory({ tutorialId }) {
       {/* Progress chart */}
       {history.length >= 2 && (
         <div className="card" style={{ marginBottom: 12 }}>
-          <div style={SECTION_LABEL}>Weight over time</div>
+          <div style={SECTION_LABEL}>{t('exercises.weight_over_time')}</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} />
@@ -104,7 +108,7 @@ function ExerciseHistory({ tutorialId }) {
                 contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: '0.8rem' }}
                 itemStyle={{ color: 'var(--accent)' }}
                 labelStyle={{ color: 'var(--text3)' }}
-                formatter={v => [`${v} ${unit}`, 'Max weight']}
+                formatter={v => [`${v} ${unit}`, t('exercises.max_weight')]}
               />
               <Line type="monotone" dataKey="maxWeight" stroke="var(--accent)" strokeWidth={2}
                 dot={{ fill: 'var(--accent)', r: 3 }} activeDot={{ r: 5 }} />
@@ -116,13 +120,13 @@ function ExerciseHistory({ tutorialId }) {
                 <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: '1.2rem', color: 'var(--accent)' }}>
                   {bestWeight}{unit}{prReps ? ` × ${prReps}` : ''}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text3)', marginTop: 2 }}>PERSONAL RECORD</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text3)', marginTop: 2 }}>{t('exercises.personal_record')}</div>
               </div>
               <div style={{ flex: 1, background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
                 <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: '1.2rem', color: 'var(--text)' }}>
                   {sessions.length}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text3)', marginTop: 2 }}>SESSIONS</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text3)', marginTop: 2 }}>{t('exercises.sessions_count')}</div>
               </div>
             </div>
           )}
@@ -133,12 +137,12 @@ function ExerciseHistory({ tutorialId }) {
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Calendar size={16} color="var(--accent)" />
-          <div style={SECTION_LABEL}>Session history</div>
+          <div style={SECTION_LABEL}>{t('exercises.session_history')}</div>
         </div>
 
         {visibleSessions.map(({ session, sets }, i) => {
           const date = new Date(session.startedAt)
-          const dateStr = date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+          const dateStr = date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
           const maxW = Math.max(...sets.map(s => s.weight ?? 0))
           const totalReps = sets.reduce((a, s) => a + (s.reps ?? 0), 0)
 
@@ -151,7 +155,7 @@ function ExerciseHistory({ tutorialId }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '0.95rem' }}>{dateStr}</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
-                  {sets.length} set{sets.length !== 1 ? 's' : ''} · {totalReps} reps
+                  {sets.length} {t('exercises.sets_label')}{sets.length !== 1 ? t('exercises.sets_plural').slice(1) : ''} · {totalReps} {t('exercises.reps').toLowerCase()}
                   {maxW > 0 ? ` · ${toDisplay(maxW, unit)}${unit} max` : ''}
                 </div>
               </div>
@@ -159,8 +163,8 @@ function ExerciseHistory({ tutorialId }) {
               {/* Set rows */}
               <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr 1fr', gap: '4px 8px' }}>
                 <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</div>
-                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Reps</div>
-                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Weight</div>
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('exercises.reps')}</div>
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('exercises.weight')}</div>
                 <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Vol</div>
                 {sets.map((s) => {
                   const w = s.weight != null ? toDisplay(s.weight, unit) : null
@@ -180,7 +184,7 @@ function ExerciseHistory({ tutorialId }) {
         {sessions.length > 5 && (
           <button className="btn btn-ghost" style={{ width: '100%', fontSize: '0.85rem', marginTop: 4 }}
             onClick={() => setShowAll(v => !v)}>
-            {showAll ? 'Show less' : `Show all ${sessions.length} sessions`}
+            {showAll ? t('exercises.show_less') : t('exercises.show_all_sessions', { count: sessions.length })}
           </button>
         )}
       </div>
@@ -193,6 +197,7 @@ function ExerciseHistory({ tutorialId }) {
 export default function ExerciseDetail() {
   const { id } = useParams()
   const nav = useNavigate()
+  const { t } = useTranslation()
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -224,15 +229,15 @@ export default function ExerciseDetail() {
 
   if (loading) return (
     <div className="page">
-      <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> Back</button>
-      <p style={{ color: 'var(--text3)' }}>Loading…</p>
+      <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> {t('exercises.back')}</button>
+      <p style={{ color: 'var(--text3)' }}>{t('exercises.loading_text')}</p>
     </div>
   )
 
   if (notFound || !ex) return (
     <div className="page">
-      <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> Back</button>
-      <p style={{ color: 'var(--text3)' }}>Exercise not found.</p>
+      <button className="btn btn-ghost" onClick={() => nav(-1)}><ArrowLeft size={18} /> {t('exercises.back')}</button>
+      <p style={{ color: 'var(--text3)' }}>{t('exercises.not_found')}</p>
     </div>
   )
 
@@ -313,11 +318,11 @@ export default function ExerciseDetail() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: playing ? 10 : 0 }}>
             <span className={`badge-${ex.experienceLevel.toLowerCase()}`}
               style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100 }}>
-              {LEVEL_LABELS[ex.experienceLevel]}
+              {t(`filters.level.${ex.experienceLevel}`, { defaultValue: LEVEL_LABELS[ex.experienceLevel] })}
             </span>
             {ex.focusArea.map(f => (
               <span key={f} style={{ fontSize: '0.75rem', color: 'var(--text2)', background: 'rgba(255,255,255,0.08)', padding: '3px 10px', borderRadius: 100 }}>
-                {FOCUS_LABELS[f]}
+                {t(`filters.focus.${f}`, { defaultValue: FOCUS_LABELS[f] })}
               </span>
             ))}
           </div>
@@ -339,11 +344,11 @@ export default function ExerciseDetail() {
       <div style={{ padding: '16px 16px 80px' }}>
         {/* Equipment */}
         <div className="card" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Equipment needed</div>
+          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>{t('exercises.equipment_needed')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {ex.equipment.map(e => (
               <span key={e} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', fontSize: '0.85rem', padding: '5px 12px', borderRadius: 8, color: 'var(--text)' }}>
-                {EQUIPMENT_LABELS[e] || e}
+                {t(`filters.equipment.${e}`, { defaultValue: EQUIPMENT_LABELS[e] || e })}
               </span>
             ))}
           </div>
@@ -354,7 +359,7 @@ export default function ExerciseDetail() {
           <div className="card" style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <Lightbulb size={16} color="var(--accent)" />
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Coaching tips</div>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('exercises.coaching_tips')}</div>
             </div>
             {ex.tips.map((tip, i) => (
               <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < ex.tips.length - 1 ? 10 : 0 }}>
@@ -379,7 +384,7 @@ export default function ExerciseDetail() {
 
         <button className="btn btn-primary" style={{ width: '100%' }}
           onClick={() => nav('/planner', { state: { addExercise: ex } })}>
-          <Plus size={18} /> Add to Plan
+          <Plus size={18} /> {t('exercises.add_to_plan')}
         </button>
       </div>
     </div>

@@ -1,5 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+// Shared Audio instance — created once, reused on every timer expiry.
+// Browsers require user interaction before audio can play; the timer is
+// always started by a tap, so this is satisfied by the time we play.
+let timerAudio = null
+function playTimerSound() {
+  try {
+    if (!timerAudio) {
+      timerAudio = new Audio('/sounds/timer-out.mp3')
+      timerAudio.preload = 'auto'
+    }
+    timerAudio.currentTime = 0
+    timerAudio.play().catch(() => {}) // ignore if blocked (e.g. silent mode)
+  } catch {}
+}
+
 export function useRestTimer() {
   const [seconds, setSeconds] = useState(0)
   const [running, setRunning] = useState(false)
@@ -21,10 +36,10 @@ export function useRestTimer() {
 
     intervalRef.current = setInterval(() => {
       setSeconds(prev => {
-        if (prev <= 1) {
-          clearInterval(intervalRef.current)
-          setRunning(false)
-          // Fire notification via service worker (works on mobile background + iOS PWA)
+        // Fire sound and notification at 1 second remaining (prev === 2 → next display = 1)
+        // This gives the audio file a full second to load and play reliably.
+        if (prev === 2) {
+          playTimerSound()
           if ('Notification' in window && Notification.permission === 'granted') {
             const opts = {
               body: 'Time for your next set 💪',
@@ -42,6 +57,10 @@ export function useRestTimer() {
               try { notifRef.current = new Notification('Rest complete!', opts) } catch {}
             }
           }
+        }
+        if (prev <= 1) {
+          clearInterval(intervalRef.current)
+          setRunning(false)
           return 0
         }
         return prev - 1

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Dumbbell } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Login() {
   const { login, register } = useAuth()
+  const { t } = useTranslation()
   const [mode, setMode] = useState('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -20,11 +22,11 @@ export default function Login() {
     setError('')
 
     if (mode === 'register' && !name.trim()) {
-      setError('Name is required')
+      setError(t('auth.name_required'))
       return
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters')
+      setError(t('auth.password_too_short'))
       return
     }
 
@@ -35,9 +37,11 @@ export default function Login() {
       } else {
         await register(name.trim(), email.trim().toLowerCase(), password)
       }
+      // Signal AppRoutes to show the loading screen before entering the app
+      sessionStorage.setItem('ft_show_loader', '1')
       // AuthContext sets user → AppRoutes re-renders → Navigate to="/" fires automatically
     } catch (err) {
-      setError(err.message ?? 'Something went wrong. Please try again.')
+      setError(err.message ?? t('auth.generic_error'))
     } finally {
       setLoading(false)
     }
@@ -72,7 +76,7 @@ export default function Login() {
           Fit<span style={{ color: 'var(--accent)' }}>Track</span>
         </h1>
         <p style={{ margin: '4px 0 0', color: 'var(--text3)', fontSize: '0.85rem' }}>
-          Planet Fitness Edition
+          {t('auth.tagline')}
         </p>
       </div>
 
@@ -87,8 +91,8 @@ export default function Login() {
         maxWidth: 360,
       }}>
         {[
-          { key: 'login',    label: 'Sign In' },
-          { key: 'register', label: 'Create Account' },
+          { key: 'login',    label: t('auth.sign_in') },
+          { key: 'register', label: t('auth.create_account') },
         ].map(({ key, label }) => (
           <button
             key={key}
@@ -122,7 +126,7 @@ export default function Login() {
         {mode === 'register' && (
           <input
             type="text"
-            placeholder="Your name"
+            placeholder={t('auth.name_placeholder')}
             value={name}
             onChange={e => setName(e.target.value)}
             autoComplete="name"
@@ -131,7 +135,7 @@ export default function Login() {
         )}
         <input
           type="email"
-          placeholder="Email"
+          placeholder={t('auth.email')}
           value={email}
           onChange={e => setEmail(e.target.value)}
           required
@@ -140,7 +144,7 @@ export default function Login() {
         />
         <input
           type="password"
-          placeholder="Password (min 8 chars)"
+          placeholder={t('auth.password_placeholder')}
           value={password}
           onChange={e => setPassword(e.target.value)}
           required
@@ -171,7 +175,7 @@ export default function Login() {
               )}
             </div>
             <span style={{ fontSize: '0.88rem', color: 'var(--text2)' }}>
-              Keep me signed in
+              {t('auth.keep_signed_in')}
             </span>
           </label>
         )}
@@ -196,16 +200,16 @@ export default function Login() {
           style={{ marginTop: 4 }}
         >
           {loading
-            ? 'Please wait…'
-            : mode === 'login' ? 'Sign In' : 'Create Account'}
+            ? t('auth.loading')
+            : mode === 'login' ? t('auth.sign_in') : t('auth.create_account')}
         </button>
       </form>
 
       <p style={{ marginTop: 24, color: 'var(--text3)', fontSize: '0.8rem', textAlign: 'center' }}>
-        Your data stays on-device first.<br />Syncs to server when online.
+        {t('auth.data_note').split('\n').map((line, i) => <span key={i}>{line}{i === 0 ? <br /> : null}</span>)}
       </p>
       <p style={{ marginTop: 12, color: 'var(--text3)', fontSize: '0.75rem', textAlign: 'center' }}>
-        <Link to="/privacy" style={{ color: 'var(--text3)', textDecoration: 'underline' }}>Privacy Policy</Link>
+        <Link to="/privacy" style={{ color: 'var(--text3)', textDecoration: 'underline' }}>{t('auth.privacy_policy')}</Link>
         {' · '}4Brazucas, LLC
       </p>
     </div>

@@ -1,64 +1,50 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Home, Dumbbell, PlayCircle, BarChart2, User, ChevronRight, Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n/index.js'
 import { db } from '../db/index.js'
 import { enqueue } from '../db/sync-queue.js'
 import { toKg } from '../hooks/useWeightUnit.js'
 import { api } from '../lib/api.js'
 import { ftInToCm } from '../lib/bmi.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useNumericKeyboard } from '../context/NumericKeyboardContext.jsx'
 
-const TOUR_STEPS = [
-  {
-    Icon: Home,
-    label: 'Home',
-    title: 'Your Dashboard',
-    description: 'See today\'s plan, your workout streak, 30-day activity heatmap, and recent sessions — all in one place.',
-  },
-  {
-    Icon: Dumbbell,
-    label: 'Exercises',
-    title: 'Exercise Library',
-    description: '610 exercises. Search by muscle group, watch video demos, track history, and add any exercise to your plan.',
-  },
-  {
-    Icon: PlayCircle,
-    label: 'Plan',
-    title: 'Weekly Planner',
-    description: 'Build your weekly training schedule. Set exercises per day with target sets, reps, weight, and rest time.',
-  },
-  {
-    Icon: BarChart2,
-    label: 'Progress',
-    title: 'Track Progress',
-    description: 'Log your body weight and review strength PRs for every exercise. Watch your gains over time with charts.',
-  },
-  {
-    Icon: User,
-    label: 'Profile',
-    title: 'Profile & Settings',
-    description: 'Set your fitness goals, switch between kg and lbs, enable rest timer notifications, and export your data.',
-  },
+// Tour step definitions — use translation keys, not hardcoded strings
+const TOUR_STEP_KEYS = [
+  { Icon: Home,       labelKey: 'nav.home',      titleKey: 'onboarding.tour_home_title',      descKey: 'onboarding.tour_home_desc' },
+  { Icon: Dumbbell,   labelKey: 'nav.exercises',  titleKey: 'onboarding.tour_exercises_title', descKey: 'onboarding.tour_exercises_desc' },
+  { Icon: PlayCircle, labelKey: 'nav.plan',       titleKey: 'onboarding.tour_planner_title',   descKey: 'onboarding.tour_planner_desc' },
+  { Icon: BarChart2,  labelKey: 'nav.progress',   titleKey: 'onboarding.tour_progress_title',  descKey: 'onboarding.tour_progress_desc' },
+  { Icon: User,       labelKey: 'nav.profile',    titleKey: 'onboarding.tour_profile_title',   descKey: 'onboarding.tour_profile_desc' },
 ]
 
-const GOAL_TYPES = [
-  { value: 'FREQUENCY', label: 'Workouts / week', placeholder: '3' },
-  { value: 'WEIGHT',    label: 'Target body weight', placeholder: '75' },
+const SEX_OPTION_KEYS = [
+  { value: 'male',        labelKey: 'onboarding.sex_male' },
+  { value: 'female',      labelKey: 'onboarding.sex_female' },
+  { value: 'unspecified', labelKey: 'onboarding.sex_unspecified' },
 ]
 
-const SEX_OPTIONS = [
-  { value: 'male',        label: 'Male' },
-  { value: 'female',      label: 'Female' },
-  { value: 'unspecified', label: 'Prefer not to say' },
+const GOAL_TYPE_KEYS = [
+  { value: 'FREQUENCY', labelKey: 'onboarding.goal_frequency', placeholder: '3' },
+  { value: 'WEIGHT',    labelKey: 'onboarding.goal_weight',    placeholder: '75' },
 ]
 
-// 0=name, 1=unit, 2=weight, 3=sex, 4=height, 5=goal
-const SETUP_STEPS = 6
+// 0=language, 1=name, 2=unit, 3=weight, 4=sex, 5=height, 6=goal
+const SETUP_STEPS = 7
 
 export default function Onboarding({ onComplete }) {
+  const { t } = useTranslation()
+  const { user, refreshUser } = useAuth()
+  const keyboard = useNumericKeyboard()
+  const isMobile = useMemo(() => window.matchMedia('(pointer: coarse)').matches, [])
   const [phase, setPhase] = useState('tour')  // 'tour' | 'setup'
   const [tourStep, setTourStep] = useState(0)
   const [setupStep, setSetupStep] = useState(0)
 
-  const [name, setName] = useState('')
+  const [lang, setLang] = useState(() => localStorage.getItem('ft_language') ?? 'en')
+  // Pre-populate name from the account they just registered
+  const [name, setName] = useState(() => user?.name || localStorage.getItem('ft_name') || '')
   const [unit, setUnit] = useState('kg')
   const [weight, setWeight] = useState('')
   const [sex, setSex] = useState('')
@@ -69,8 +55,14 @@ export default function Onboarding({ onComplete }) {
   const [goalType, setGoalType] = useState('FREQUENCY')
   const [goalValue, setGoalValue] = useState('')
 
+  function selectLanguage(code) {
+    setLang(code)
+    i18n.changeLanguage(code)
+    localStorage.setItem('ft_language', code)
+  }
+
   function nextTour() {
-    if (tourStep < TOUR_STEPS.length - 1) {
+    if (tourStep < TOUR_STEP_KEYS.length - 1) {
       setTourStep(i => i + 1)
     } else {
       setPhase('setup')
@@ -106,12 +98,15 @@ export default function Onboarding({ onComplete }) {
       computedHeightCm = parseFloat(heightCm)
     }
 
-    // Sync profile to server (best-effort — don't block completion)
-    const patch = { onboarded: true }
+    // Sync profile to server — await so refreshUser gets the updated data
+    const patch = { onboarded: true, language: lang }
     if (name.trim()) patch.name = name.trim()
     if (sex) patch.sex = sex
     if (computedHeightCm) { patch.heightCm = computedHeightCm; patch.heightUnit = heightUnit }
-    api.patch('/api/auth/me', patch).catch(() => {})
+    try {
+      const res = await api.patch('/api/auth/me', patch)
+      if (res?.data) refreshUser(res.data)
+    } catch { /* offline — ignore */ }
 
     localStorage.setItem('ft_onboarded', '1')
     onComplete()
@@ -120,7 +115,7 @@ export default function Onboarding({ onComplete }) {
   // ── Tour ────────────────────────────────────────────────────────────────────
 
   if (phase === 'tour') {
-    const step = TOUR_STEPS[tourStep]
+    const step = TOUR_STEP_KEYS[tourStep]
     const { Icon } = step
 
     return (
@@ -136,12 +131,12 @@ export default function Onboarding({ onComplete }) {
           onClick={() => setPhase('setup')}
           style={{ position: 'absolute', top: 20, right: 20, background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, padding: 8 }}
         >
-          Skip tour
+          {t('onboarding.skip_tour')}
         </button>
 
         {/* Step dots */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 44 }}>
-          {TOUR_STEPS.map((_, i) => (
+          {TOUR_STEP_KEYS.map((_, i) => (
             <div key={i} style={{
               width: i === tourStep ? 22 : 6,
               height: 6, borderRadius: 3,
@@ -165,10 +160,10 @@ export default function Onboarding({ onComplete }) {
         {/* Text */}
         <div style={{ textAlign: 'center', marginBottom: 44, maxWidth: 340 }}>
           <h2 style={{ margin: '0 0 14px', fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: '1.9rem', letterSpacing: '0.01em' }}>
-            {step.title}
+            {t(step.titleKey)}
           </h2>
           <p style={{ margin: 0, color: 'var(--text2)', fontSize: '1rem', lineHeight: 1.65 }}>
-            {step.description}
+            {t(step.descKey)}
           </p>
         </div>
 
@@ -178,8 +173,8 @@ export default function Onboarding({ onComplete }) {
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 18, padding: '10px 12px', marginBottom: 40,
         }}>
-          {TOUR_STEPS.map((t, i) => {
-            const TIcon = t.Icon
+          {TOUR_STEP_KEYS.map((ts, i) => {
+            const TIcon = ts.Icon
             const active = i === tourStep
             return (
               <div key={i} onClick={() => setTourStep(i)} style={{
@@ -190,7 +185,7 @@ export default function Onboarding({ onComplete }) {
               }}>
                 <TIcon size={20} color={active ? 'var(--accent)' : 'var(--text3)'} strokeWidth={active ? 2.5 : 1.8} />
                 <span style={{ fontSize: '0.6rem', fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text3)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                  {t.label}
+                  {t(ts.labelKey)}
                 </span>
               </div>
             )
@@ -202,9 +197,9 @@ export default function Onboarding({ onComplete }) {
           style={{ width: '100%', maxWidth: 340, padding: '14px' }}
           onClick={nextTour}
         >
-          {tourStep < TOUR_STEPS.length - 1
-            ? <>Next <ChevronRight size={18} /></>
-            : 'Set up your profile'}
+          {tourStep < TOUR_STEP_KEYS.length - 1
+            ? <>{t('onboarding.next')} <ChevronRight size={18} /></>
+            : t('onboarding.set_up_profile')}
         </button>
       </div>
     )
@@ -212,14 +207,23 @@ export default function Onboarding({ onComplete }) {
 
   // ── Setup form ───────────────────────────────────────────────────────────────
 
-  const setupTitles = ["What's your name?", 'Weight unit', 'Starting weight', 'Biological sex', 'Your height', 'Set a goal']
+  const setupTitles = [
+    t('onboarding.step_language_title'),
+    t('onboarding.step_name_title'),
+    t('onboarding.step_unit_title'),
+    t('onboarding.step_weight_title'),
+    t('onboarding.step_sex_title'),
+    t('onboarding.step_height_title'),
+    t('onboarding.step_goal_title'),
+  ]
   const setupSubs = [
-    'We\'ll use this to personalize your experience.',
-    'You can change this anytime in Profile.',
-    'Optional — we\'ll track your progress from here.',
-    'Optional — used for BMI and body composition tracking.',
-    'Optional — needed to calculate your BMI.',
-    'Optional — helps you stay focused and motivated.',
+    t('onboarding.step_language_sub'),
+    t('onboarding.step_name_sub'),
+    t('onboarding.step_unit_sub'),
+    t('onboarding.step_weight_sub'),
+    t('onboarding.step_sex_sub'),
+    t('onboarding.step_height_sub'),
+    t('onboarding.step_goal_sub'),
   ]
 
   function handleSetupNext() {
@@ -230,7 +234,8 @@ export default function Onboarding({ onComplete }) {
     }
   }
 
-  const canContinue = !(setupStep === 0 && !name.trim())
+  // Name is pre-populated from registration; block only if completely empty
+  const canContinue = !(setupStep === 1 && !name.trim())
 
   return (
     <div style={{
@@ -255,7 +260,7 @@ export default function Onboarding({ onComplete }) {
         {/* Step label + heading */}
         <div style={{ marginBottom: 36 }}>
           <p style={{ color: 'var(--text3)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', margin: '0 0 10px' }}>
-            {setupStep + 1} of {SETUP_STEPS}
+            {t('onboarding.step_label', { current: setupStep + 1, total: SETUP_STEPS })}
           </p>
           <h2 style={{ margin: '0 0 8px', fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: '2rem', lineHeight: 1.1 }}>
             {setupTitles[setupStep]}
@@ -265,13 +270,41 @@ export default function Onboarding({ onComplete }) {
           </p>
         </div>
 
-        {/* Step 0 — Name */}
+        {/* Step 0 — Language */}
         {setupStep === 0 && (
+          <div style={{ display: 'flex', gap: 14 }}>
+            {[
+              { code: 'en',    label: t('onboarding.language_english') },
+              { code: 'pt-BR', label: t('onboarding.language_portuguese') },
+            ].map(({ code, label }) => (
+              <button
+                key={code}
+                onClick={() => selectLanguage(code)}
+                style={{
+                  flex: 1, padding: '24px 8px', borderRadius: 16,
+                  border: `2px solid ${lang === code ? 'var(--accent)' : 'var(--border)'}`,
+                  background: lang === code ? 'rgba(232,255,0,0.1)' : 'var(--surface2)',
+                  color: lang === code ? 'var(--accent)' : 'var(--text2)',
+                  fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: '1.1rem',
+                  cursor: 'pointer', letterSpacing: '0.02em',
+                  transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                {lang === code && <Check size={16} color="var(--accent)" />}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Step 1 — Name */}
+        {setupStep === 1 && (
           <input
             value={name}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && name.trim() && handleSetupNext()}
-            placeholder="Your name"
+            placeholder={t('onboarding.name_input_placeholder')}
             autoFocus
             style={{
               fontSize: '1.25rem', padding: '16px', borderRadius: 12,
@@ -282,8 +315,8 @@ export default function Onboarding({ onComplete }) {
           />
         )}
 
-        {/* Step 1 — Unit */}
-        {setupStep === 1 && (
+        {/* Step 2 — Unit */}
+        {setupStep === 2 && (
           <div style={{ display: 'flex', gap: 14 }}>
             {['kg', 'lbs'].map(u => (
               <button
@@ -305,22 +338,34 @@ export default function Onboarding({ onComplete }) {
           </div>
         )}
 
-        {/* Step 2 — Current weight */}
-        {setupStep === 2 && (
+        {/* Step 3 — Current weight */}
+        {setupStep === 3 && (
           <div style={{ position: 'relative' }}>
             <input
-              type="number"
+              type={isMobile ? 'text' : 'number'}
+              inputMode={isMobile ? 'none' : undefined}
+              readOnly={isMobile || undefined}
               value={weight}
-              onChange={e => setWeight(e.target.value)}
               placeholder={unit === 'kg' ? '70' : '154'}
-              autoFocus
-              min={unit === 'kg' ? 20 : 44}
-              max={unit === 'kg' ? 300 : 660}
+              autoFocus={!isMobile}
+              min={!isMobile ? (unit === 'kg' ? 20 : 44) : undefined}
+              max={!isMobile ? (unit === 'kg' ? 300 : 660) : undefined}
               style={{
                 fontSize: '1.5rem', padding: '16px 72px 16px 18px',
                 borderRadius: 12, border: '1px solid var(--border)',
                 background: 'var(--surface2)', color: 'var(--text)',
                 width: '100%', boxSizing: 'border-box', outline: 'none',
+              }}
+              onChange={isMobile ? undefined : e => setWeight(e.target.value)}
+              onFocus={() => {
+                if (!isMobile) return
+                keyboard.open({
+                  label: `Weight: ${unit === 'kg' ? '70' : '154'} ${unit}`,
+                  value: weight,
+                  onChange: v => setWeight(v),
+                  isLastField: true,
+                  onDone: () => keyboard.close(),
+                })
               }}
             />
             <span style={{
@@ -332,10 +377,10 @@ export default function Onboarding({ onComplete }) {
           </div>
         )}
 
-        {/* Step 3 — Sex */}
-        {setupStep === 3 && (
+        {/* Step 4 — Sex */}
+        {setupStep === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {SEX_OPTIONS.map(opt => (
+            {SEX_OPTION_KEYS.map(opt => (
               <button
                 key={opt.value}
                 onClick={() => setSex(opt.value)}
@@ -349,15 +394,15 @@ export default function Onboarding({ onComplete }) {
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 }}
               >
-                {opt.label}
+                {t(opt.labelKey)}
                 {sex === opt.value && <Check size={18} color="var(--accent)" />}
               </button>
             ))}
           </div>
         )}
 
-        {/* Step 4 — Height */}
-        {setupStep === 4 && (
+        {/* Step 5 — Height */}
+        {setupStep === 5 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Unit toggle */}
             <div style={{ display: 'flex', gap: 8 }}>
@@ -382,17 +427,30 @@ export default function Onboarding({ onComplete }) {
             {heightUnit === 'cm' ? (
               <div style={{ position: 'relative' }}>
                 <input
-                  type="number"
+                  type={isMobile ? 'text' : 'number'}
+                  inputMode={isMobile ? 'none' : undefined}
+                  readOnly={isMobile || undefined}
                   value={heightCm}
-                  onChange={e => setHeightCm(e.target.value)}
                   placeholder="170"
-                  autoFocus
-                  min={50} max={275}
+                  autoFocus={!isMobile}
+                  min={!isMobile ? 50 : undefined}
+                  max={!isMobile ? 275 : undefined}
                   style={{
                     fontSize: '1.5rem', padding: '16px 72px 16px 18px',
                     borderRadius: 12, border: '1px solid var(--border)',
                     background: 'var(--surface2)', color: 'var(--text)',
                     width: '100%', boxSizing: 'border-box', outline: 'none',
+                  }}
+                  onChange={isMobile ? undefined : e => setHeightCm(e.target.value)}
+                  onFocus={() => {
+                    if (!isMobile) return
+                    keyboard.open({
+                      label: 'Height: 170 cm',
+                      value: heightCm,
+                      onChange: v => setHeightCm(v),
+                      isLastField: true,
+                      onDone: () => keyboard.close(),
+                    })
                   }}
                 />
                 <span style={{
@@ -404,17 +462,31 @@ export default function Onboarding({ onComplete }) {
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ position: 'relative', flex: 1 }}>
                   <input
-                    type="number"
+                    type={isMobile ? 'text' : 'number'}
+                    inputMode={isMobile ? 'none' : undefined}
+                    readOnly={isMobile || undefined}
                     value={heightFt}
-                    onChange={e => setHeightFt(e.target.value)}
                     placeholder="5"
-                    autoFocus
-                    min={3} max={8}
+                    autoFocus={!isMobile}
+                    min={!isMobile ? 3 : undefined}
+                    max={!isMobile ? 8 : undefined}
+                    data-nk="ob-height-ft"
                     style={{
                       fontSize: '1.5rem', padding: '16px 52px 16px 18px',
                       borderRadius: 12, border: '1px solid var(--border)',
                       background: 'var(--surface2)', color: 'var(--text)',
                       width: '100%', boxSizing: 'border-box', outline: 'none',
+                    }}
+                    onChange={isMobile ? undefined : e => setHeightFt(e.target.value)}
+                    onFocus={() => {
+                      if (!isMobile) return
+                      keyboard.open({
+                        label: 'Height: 5 ft',
+                        value: heightFt,
+                        onChange: v => setHeightFt(v),
+                        isLastField: false,
+                        onNext: () => document.querySelector('[data-nk="ob-height-in"]')?.focus(),
+                      })
                     }}
                   />
                   <span style={{
@@ -424,16 +496,30 @@ export default function Onboarding({ onComplete }) {
                 </div>
                 <div style={{ position: 'relative', flex: 1 }}>
                   <input
-                    type="number"
+                    type={isMobile ? 'text' : 'number'}
+                    inputMode={isMobile ? 'none' : undefined}
+                    readOnly={isMobile || undefined}
                     value={heightIn}
-                    onChange={e => setHeightIn(e.target.value)}
                     placeholder="10"
-                    min={0} max={11}
+                    min={!isMobile ? 0 : undefined}
+                    max={!isMobile ? 11 : undefined}
+                    data-nk="ob-height-in"
                     style={{
                       fontSize: '1.5rem', padding: '16px 52px 16px 18px',
                       borderRadius: 12, border: '1px solid var(--border)',
                       background: 'var(--surface2)', color: 'var(--text)',
                       width: '100%', boxSizing: 'border-box', outline: 'none',
+                    }}
+                    onChange={isMobile ? undefined : e => setHeightIn(e.target.value)}
+                    onFocus={() => {
+                      if (!isMobile) return
+                      keyboard.open({
+                        label: 'Inches: 10 in',
+                        value: heightIn,
+                        onChange: v => setHeightIn(v),
+                        isLastField: true,
+                        onDone: () => keyboard.close(),
+                      })
                     }}
                   />
                   <span style={{
@@ -446,11 +532,11 @@ export default function Onboarding({ onComplete }) {
           </div>
         )}
 
-        {/* Step 5 — Goal */}
-        {setupStep === 5 && (
+        {/* Step 6 — Goal */}
+        {setupStep === 6 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', gap: 10 }}>
-              {GOAL_TYPES.map(g => (
+              {GOAL_TYPE_KEYS.map(g => (
                 <button
                   key={g.value}
                   onClick={() => { setGoalType(g.value); setGoalValue('') }}
@@ -464,30 +550,43 @@ export default function Onboarding({ onComplete }) {
                     lineHeight: 1.4,
                   }}
                 >
-                  {g.label}
+                  {t(g.labelKey)}
                 </button>
               ))}
             </div>
             <div style={{ position: 'relative' }}>
               <input
-                type="number"
+                type={isMobile ? 'text' : 'number'}
+                inputMode={isMobile ? 'none' : undefined}
+                readOnly={isMobile || undefined}
                 value={goalValue}
-                onChange={e => setGoalValue(e.target.value)}
-                placeholder={GOAL_TYPES.find(g => g.value === goalType)?.placeholder}
-                autoFocus
-                min={0}
+                placeholder={GOAL_TYPE_KEYS.find(g => g.value === goalType)?.placeholder}
+                autoFocus={!isMobile}
+                min={!isMobile ? 0 : undefined}
                 style={{
                   fontSize: '1.5rem', padding: '16px 88px 16px 18px',
                   borderRadius: 12, border: '1px solid var(--border)',
                   background: 'var(--surface2)', color: 'var(--text)',
                   width: '100%', boxSizing: 'border-box', outline: 'none',
                 }}
+                onChange={isMobile ? undefined : e => setGoalValue(e.target.value)}
+                onFocus={() => {
+                  if (!isMobile) return
+                  const suffix = goalType === 'FREQUENCY' ? t('onboarding.times_per_week') : unit
+                  keyboard.open({
+                    label: `Goal: ${GOAL_TYPE_KEYS.find(g => g.value === goalType)?.placeholder} ${suffix}`,
+                    value: goalValue,
+                    onChange: v => setGoalValue(v),
+                    isLastField: true,
+                    onDone: () => keyboard.close(),
+                  })
+                }}
               />
               <span style={{
                 position: 'absolute', right: 18, top: '50%', transform: 'translateY(-50%)',
                 color: 'var(--text3)', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '0.9rem',
               }}>
-                {goalType === 'FREQUENCY' ? 'times/wk' : unit}
+                {goalType === 'FREQUENCY' ? t('onboarding.times_per_week') : unit}
               </span>
             </div>
           </div>
@@ -499,7 +598,7 @@ export default function Onboarding({ onComplete }) {
         <div style={{ display: 'flex', gap: 10 }}>
           {setupStep > 0 && (
             <button className="btn btn-ghost" onClick={() => setSetupStep(i => i - 1)}>
-              Back
+              {t('onboarding.back')}
             </button>
           )}
           <button
@@ -509,29 +608,29 @@ export default function Onboarding({ onComplete }) {
             disabled={!canContinue}
           >
             {setupStep < SETUP_STEPS - 1
-              ? 'Continue'
-              : <><Check size={16} /> Let's go!</>
+              ? t('onboarding.continue')
+              : <><Check size={16} /> {t('onboarding.finish')}</>
             }
           </button>
         </div>
 
-        {/* Skip optional steps (all except name) */}
-        {setupStep > 0 && (
+        {/* Skip optional steps (all except name at step 1) */}
+        {setupStep > 0 && setupStep !== 1 && (
           <button
             onClick={handleSetupNext}
             style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: '0.82rem', padding: '4px 0', textAlign: 'center' }}
           >
-            Skip this step
+            {t('onboarding.skip_step')}
           </button>
         )}
 
-        {/* Skip entire setup (only on first step) */}
+        {/* Skip entire setup (only on language step, step 0) */}
         {setupStep === 0 && (
           <button
             onClick={finish}
             style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: '0.82rem', padding: '4px 0', textAlign: 'center' }}
           >
-            Skip setup
+            {t('onboarding.skip_setup')}
           </button>
         )}
       </div>

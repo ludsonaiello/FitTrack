@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { t, resolveLanguage } from '../i18n/index.js'
 
 const prisma = new PrismaClient()
 
@@ -23,6 +24,7 @@ const querySchema = {
  */
 export default async function exerciseRoutes(app) {
   app.get('/exercises/:id', {}, async (request, reply) => {
+    const lang = resolveLanguage(request)
     const exercise = await prisma.exercise.findUnique({
       where: { id: request.params.id },
       select: {
@@ -31,7 +33,7 @@ export default async function exerciseRoutes(app) {
         imageUrl: true, mediaUrl: true, tips: true,
       },
     })
-    if (!exercise) return reply.status(404).send({ success: false, error: 'Exercise not found' })
+    if (!exercise) return reply.status(404).send({ success: false, error: t(lang, 'workouts.exercise_not_found') })
     return { success: true, data: exercise }
   })
 
@@ -43,6 +45,7 @@ export default async function exerciseRoutes(app) {
       },
     },
     async (request, reply) => {
+      const lang = resolveLanguage(request)
       try {
         const { q, equipment, focus, level, page, limit } = request.query
 
@@ -94,7 +97,7 @@ export default async function exerciseRoutes(app) {
         })
       } catch (e) {
         app.log.error(e)
-        return reply.status(500).send({ success: false, error: e.message })
+        return reply.status(500).send({ success: false, error: t(lang, 'server.internal_error') })
       }
     }
   )

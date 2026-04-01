@@ -15,4 +15,4 @@ COPY src ./src
 COPY package.json ./
 COPY exercises.json ./exercises.json
 EXPOSE 4203
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronUp, Flame, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { getAllSessionsWithVolume, deleteSession } from '../db/index.js'
+import { getAllSessionsWithVolume, deleteSession, mergeServerSessions } from '../db/index.js'
 import { getExerciseById, exImageUrl } from '../lib/exercises.js'
 import { useWeightUnit, toDisplay } from '../hooks/useWeightUnit.js'
+import { api, fetchWithFallback } from '../lib/api.js'
 import ConfirmModal from '../components/ConfirmModal.jsx'
 
 function fmt(sec) {
@@ -16,16 +18,30 @@ function fmt(sec) {
 
 export default function Sessions() {
   const nav = useNavigate()
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language
   const [unit] = useWeightUnit()
   const [sessions, setSessions] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(null) // session id to delete
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
+  }, [])
 
   async function load() {
-    const data = await getAllSessionsWithVolume()
+    const data = await fetchWithFallback(
+      async () => {
+        const json = await api.get('/api/workouts/sessions?limit=200')
+        if (!json.success) throw new Error('bad response')
+        await mergeServerSessions(json.data)
+        return getAllSessionsWithVolume()
+      },
+      () => getAllSessionsWithVolume(),
+    )
     setSessions(data)
     setLoading(false)
   }
@@ -46,7 +62,7 @@ export default function Sessions() {
   // Chart: volume per session (last 20), oldest → newest
   const chartSessions = [...sessions].reverse().slice(-20)
   const chartData = chartSessions.map(s => ({
-    label: new Date(s.startedAt).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+    label: new Date(s.startedAt).toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
     volume: Math.round(toDisplay(s.totalVolKg, unit)),
     duration: Math.round((s.durationSec || 0) / 60),
   }))
@@ -60,9 +76,9 @@ export default function Sessions() {
     <div className="page">
       {confirmDelete !== null && (
         <ConfirmModal
-          title="Delete session?"
-          message="This workout session will be permanently deleted. This cannot be undone."
-          confirmLabel="Delete"
+          title={t('sessions.delete_title')}
+          message={t('sessions.delete_message')}
+          confirmLabel={t('sessions.delete_label')}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setConfirmDelete(null)}
         />
@@ -73,14 +89,14 @@ export default function Sessions() {
           <ArrowLeft size={18} />
         </button>
         <div>
-          <h1 style={{ margin: 0, lineHeight: 1 }}>All<br /><span style={{ color: 'var(--accent)' }}>Sessions</span></h1>
+          <h1 style={{ margin: 0, lineHeight: 1 }}>{t('sessions.title')}<br /><span style={{ color: 'var(--accent)' }}>{t('sessions.title_accent')}</span></h1>
         </div>
       </div>
 
       {sessions.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <div style={{ fontSize: '3rem', marginBottom: 12 }}>🏋️</div>
-          <p style={{ color: 'var(--text3)' }}>No completed sessions yet.</p>
+          <p style={{ color: 'var(--text3)' }}>{t('sessions.no_sessions')}</p>
         </div>
       )}
 
@@ -90,15 +106,15 @@ export default function Sessions() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
             <div className="stat-box">
               <div className="stat-value">{sessions.length}</div>
-              <div className="stat-label">Workouts</div>
+              <div className="stat-label">{t('sessions.workouts')}</div>
             </div>
             <div className="stat-box">
               <div className="stat-value">{totalSets}</div>
-              <div className="stat-label">Total sets</div>
+              <div className="stat-label">{t('sessions.total_sets')}</div>
             </div>
             <div className="stat-box">
               <div className="stat-value">{Math.round(toDisplay(totalVol, unit)).toLocaleString()}</div>
-              <div className="stat-label">Vol ({unit})</div>
+              <div className="stat-label">{t('sessions.vol_unit', { unit })}</div>
             </div>
           </div>
 
@@ -106,7 +122,7 @@ export default function Sessions() {
           {chartData.length >= 2 && (
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-                Volume per session ({unit})
+                {t('sessions.volume_per_session', { unit })}
               </div>
               <ResponsiveContainer width="100%" height={180}>
                 <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
@@ -128,14 +144,14 @@ export default function Sessions() {
 
           {/* Session list */}
           <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
-            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+            {sessions.length} {t('sessions.workouts').toLowerCase()}
           </div>
 
           {sessions.map(s => {
             const isOpen = expanded === s.id
             const date = new Date(s.startedAt)
-            const dateStr = date.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })
-            const timeStr = date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
+            const dateStr = date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
+            const timeStr = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
             const completedSets = s.sets.filter(x => x.completed)
             const vol = Math.round(toDisplay(s.totalVolKg, unit))
 
@@ -184,7 +200,7 @@ export default function Sessions() {
                 {isOpen && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '12px 14px' }}>
                     {order.length === 0 ? (
-                      <p style={{ color: 'var(--text3)', fontSize: '0.85rem', margin: 0 }}>No sets logged.</p>
+                      <p style={{ color: 'var(--text3)', fontSize: '0.85rem', margin: 0 }}>{t('sessions.no_sets_logged')}</p>
                     ) : order.map((tutId, ei) => {
                       const info = getExerciseById(tutId)
                       const sets = byEx[tutId].sort((a, b) => a.setNumber - b.setNumber)
@@ -215,8 +231,8 @@ export default function Sessions() {
                           {/* Set grid */}
                           <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 1fr', gap: '3px 8px', paddingLeft: 40 }}>
                             <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</div>
-                            <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Reps</div>
-                            <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Weight</div>
+                            <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('exercises.reps')}</div>
+                            <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('exercises.weight')}</div>
                             {sets.map(set => [
                               <div key={`n${set.id}`} style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: '0.85rem', color: 'var(--accent)' }}>{set.setNumber}</div>,
                               <div key={`r${set.id}`} style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{set.reps ?? '—'}</div>,
@@ -232,7 +248,7 @@ export default function Sessions() {
                     {/* Full detail link */}
                     <button className="btn btn-ghost" style={{ width: '100%', marginTop: 14, fontSize: '0.85rem' }}
                       onClick={() => nav(`/workout/session/${s.id}`)}>
-                      View full summary
+                      {t('sessions.view_full_summary')}
                     </button>
                   </div>
                 )}

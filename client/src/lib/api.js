@@ -85,6 +85,34 @@ export const api = {
   delete: (path)        => request('DELETE', path),
 }
 
+// ── Online-first loader ───────────────────────────────────────────────────────
+
+/**
+ * Try `apiFn` up to `retries` times with exponential backoff.
+ * If all attempts fail, call `localFn(lastError)` as offline fallback.
+ * Auth errors (401) are never retried — they propagate immediately.
+ *
+ * @param {() => Promise<T>}        apiFn    Hits the live API
+ * @param {(err?: Error) => T}      localFn  Reads from IndexedDB
+ * @param {number}                  retries  Max attempts (default 3)
+ * @returns {Promise<T>}
+ */
+export async function fetchWithFallback(apiFn, localFn, retries = 3) {
+  let lastErr
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await apiFn()
+    } catch (err) {
+      lastErr = err
+      if (err.status === 401) throw err // never retry auth errors
+      if (attempt < retries - 1) {
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1))) // 400ms → 800ms
+      }
+    }
+  }
+  return localFn(lastErr)
+}
+
 async function uploadRequest(path, formData, isRetry = false) {
   const res = await fetch(BASE + path, {
     method: 'POST',

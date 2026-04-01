@@ -1,3 +1,5 @@
+import { t, resolveLanguage } from '../i18n/index.js'
+
 /**
  * @param {import('fastify').FastifyInstance} app
  */
@@ -10,6 +12,7 @@ export default async function workoutRoutes(app) {
 
   // GET /api/workouts/plans
   app.get('/plans', async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const plans = await prisma.workoutPlan.findMany({
         where: { userId: req.user.sub },
@@ -19,7 +22,7 @@ export default async function workoutRoutes(app) {
       return reply.send({ success: true, data: plans })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to fetch plans' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.fetch_plans_failed') })
     }
   })
 
@@ -37,6 +40,7 @@ export default async function workoutRoutes(app) {
       },
     },
   }, async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const plan = await prisma.workoutPlan.create({
         data: { ...req.body, userId: req.user.sub },
@@ -44,7 +48,7 @@ export default async function workoutRoutes(app) {
       return reply.status(201).send({ success: true, data: plan })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to create plan' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.create_plan_failed') })
     }
   })
 
@@ -63,9 +67,10 @@ export default async function workoutRoutes(app) {
   }, async (req, reply) => {
     const { id } = req.params
     const userId = req.user.sub
+    const lang = resolveLanguage(req)
     try {
       const existing = await prisma.workoutPlan.findFirst({ where: { id, userId } })
-      if (!existing) return reply.status(404).send({ success: false, error: 'Plan not found' })
+      if (!existing) return reply.status(404).send({ success: false, error: t(lang, 'workouts.plan_not_found') })
 
       if (req.body.isActive === true) {
         await prisma.workoutPlan.updateMany({
@@ -87,21 +92,22 @@ export default async function workoutRoutes(app) {
       return reply.send({ success: true, data: updated })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to update plan' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.update_plan_failed') })
     }
   })
 
   // DELETE /api/workouts/plans/:id
   app.delete('/plans/:id', async (req, reply) => {
+    const lang = resolveLanguage(req)
     try {
       const deleted = await prisma.workoutPlan.deleteMany({
         where: { id: req.params.id, userId: req.user.sub },
       })
-      if (deleted.count === 0) return reply.status(404).send({ success: false, error: 'Plan not found' })
+      if (deleted.count === 0) return reply.status(404).send({ success: false, error: t(lang, 'workouts.plan_not_found') })
       return reply.send({ success: true })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to delete plan' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.delete_plan_failed') })
     }
   })
 
@@ -121,6 +127,7 @@ export default async function workoutRoutes(app) {
     },
   }, async (req, reply) => {
     const { page, limit } = req.query
+    const lang = resolveLanguage(req)
     try {
       const [total, sessions] = await Promise.all([
         prisma.workoutSession.count({ where: { userId: req.user.sub } }),
@@ -135,7 +142,7 @@ export default async function workoutRoutes(app) {
       return reply.send({ success: true, data: sessions, meta: { total, page, limit } })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to fetch sessions' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.fetch_sessions_failed') })
     }
   })
 
@@ -173,10 +180,11 @@ export default async function workoutRoutes(app) {
     },
   }, async (req, reply) => {
     const { sets = [], planId, notes, startedAt, completedAt, durationSec } = req.body
+    const lang = resolveLanguage(req)
     try {
       if (planId) {
         const plan = await prisma.workoutPlan.findFirst({ where: { id: planId, userId: req.user.sub } })
-        if (!plan) return reply.status(400).send({ success: false, error: 'Invalid planId' })
+        if (!plan) return reply.status(400).send({ success: false, error: t(lang, 'workouts.invalid_plan_id') })
       }
 
       const session = await prisma.workoutSession.create({
@@ -194,7 +202,7 @@ export default async function workoutRoutes(app) {
       return reply.status(201).send({ success: true, data: session })
     } catch (e) {
       app.log.error(e)
-      return reply.status(500).send({ success: false, error: 'Failed to save session' })
+      return reply.status(500).send({ success: false, error: t(lang, 'workouts.save_session_failed') })
     }
   })
 }

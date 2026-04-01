@@ -1,0 +1,54 @@
+{
+  "auth": {
+    "invalid_credentials": "Invalid email or password.",
+    "email_taken": "An account with this email already exists.",
+    "not_found": "User not found.",
+    "unauthorized": "You must be logged in.",
+    "forbidden": "You do not have permission to perform this action.",
+    "token_expired": "Your session has expired. Please log in again.",
+    "token_invalid": "Invalid token.",
+    "refresh_required": "Please log in again.",
+    "session_expired": "Session expired. Please log in again.",
+    "no_refresh_token": "No refresh token provided.",
+    "registration_failed": "Registration failed. Please try again.",
+    "login_failed": "Login failed. Please try again.",
+    "token_refresh_failed": "Token refresh failed.",
+    "fetch_user_failed": "Failed to fetch user.",
+    "update_profile_failed": "Failed to update profile.",
+    "delete_account_failed": "Failed to delete account. Please try again."
+  },
+  "validation": {
+    "email_required": "Email is required.",
+    "password_required": "Password is required.",
+    "name_required": "Name is required.",
+    "password_too_short": "Password must be at least 8 characters.",
+    "invalid_language": "Language must be 'en' or 'pt-BR'."
+  },
+  "workouts": {
+    "plan_not_found": "Workout plan not found.",
+    "session_not_found": "Session not found.",
+    "exercise_not_found": "Exercise not found.",
+    "invalid_plan_id": "Invalid plan ID.",
+    "fetch_plans_failed": "Failed to fetch plans.",
+    "create_plan_failed": "Failed to create plan.",
+    "update_plan_failed": "Failed to update plan.",
+    "delete_plan_failed": "Failed to delete plan.",
+    "fetch_sessions_failed": "Failed to fetch sessions.",
+    "save_session_failed": "Failed to save session."
+  },
+  "progress": {
+    "goal_not_found": "Goal not found.",
+    "weight_not_found": "Weight entry not found.",
+    "entry_not_found": "Entry not found.",
+    "fetch_weight_failed": "Failed to fetch weight entries.",
+    "log_weight_failed": "Failed to log weight.",
+    "delete_entry_failed": "Failed to delete entry.",
+    "fetch_goals_failed": "Failed to fetch goals.",
+    "create_goal_failed": "Failed to create goal.",
+    "update_goal_failed": "Failed to update goal."
+  },
+  "server": {
+    "internal_error": "An internal server error occurred.",
+    "not_found": "The requested resource was not found."
+  }
+}

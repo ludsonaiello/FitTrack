@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { api, NetworkError } from '../lib/api.js'
+import i18n from '../i18n/index.js'
 
 const AuthContext = createContext(null)
 const USER_CACHE_KEY = 'ft_user_cache'
@@ -26,6 +27,10 @@ export function AuthProvider({ children }) {
       .then(res => {
         setUser(res.data)
         setCachedUser(res.data)
+        if (res.data?.language) {
+          i18n.changeLanguage(res.data.language)
+          localStorage.setItem('ft_language', res.data.language)
+        }
       })
       .catch(err => {
         if (err instanceof NetworkError) {
@@ -46,6 +51,10 @@ export function AuthProvider({ children }) {
     const res = await api.post('/api/auth/login', { email, password, rememberMe })
     setUser(res.data)
     setCachedUser(res.data)
+    if (res.data?.language) {
+      i18n.changeLanguage(res.data.language)
+      localStorage.setItem('ft_language', res.data.language)
+    }
     return res.data
   }
 
@@ -54,6 +63,10 @@ export function AuthProvider({ children }) {
     const res = await api.post('/api/auth/register', { name, email, password })
     setUser(res.data)
     setCachedUser(res.data)
+    if (res.data?.language) {
+      i18n.changeLanguage(res.data.language)
+      localStorage.setItem('ft_language', res.data.language)
+    }
     return res.data
   }
 

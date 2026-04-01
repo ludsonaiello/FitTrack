@@ -1,0 +1,1 @@
+Backend i18n complete. Frontend may proceed. Language field exposed in GET/PATCH /api/auth/me. Translation files: en.json, pt-BR.json. i18n helper: server/src/i18n/index.js.
