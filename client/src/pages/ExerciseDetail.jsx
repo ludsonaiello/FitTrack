@@ -4,9 +4,9 @@ import { ArrowLeft, Play, Pause, Plus, Lightbulb, Calendar, Dumbbell, BookOpen }
 import { useTranslation } from 'react-i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { getExerciseById, EQUIPMENT_LABELS, FOCUS_LABELS, LEVEL_LABELS, exImageUrl, exVideoUrl } from '../lib/exercises.js'
-import { getExerciseHistory, getExercisePlans, getExerciseSessionHistory } from '../db/index.js'
+import { getExerciseHistory, getExercisePlans, getExerciseSessionHistory, mergeServerSessions } from '../db/index.js'
 import { getWeightUnit, toDisplay } from '../hooks/useWeightUnit.js'
-import { BASE } from '../lib/api.js'
+import { BASE, api, fetchWithFallback } from '../lib/api.js'
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -76,8 +76,20 @@ function ExerciseHistory({ tutorialId }) {
   const unit = getWeightUnit()
 
   useEffect(() => {
-    getExerciseHistory(tutorialId).then(setHistory).catch(() => setHistory([]))
-    getExerciseSessionHistory(tutorialId).then(setSessions).catch(() => setSessions([]))
+    async function load() {
+      // Online-first: sync sessions from server before reading exercise history
+      await fetchWithFallback(
+        async () => {
+          const json = await api.get('/api/workouts/sessions?limit=500')
+          if (!json.success || !Array.isArray(json.data)) throw new Error('bad response')
+          await mergeServerSessions(json.data)
+        },
+        () => {},
+      )
+      getExerciseHistory(tutorialId).then(setHistory).catch(() => setHistory([]))
+      getExerciseSessionHistory(tutorialId).then(setSessions).catch(() => setSessions([]))
+    }
+    load()
   }, [tutorialId])
 
   if (!sessions.length) return null

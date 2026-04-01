@@ -761,9 +761,14 @@ export default function Dashboard() {
         if (!json.success || !Array.isArray(json.data)) throw new Error('bad response')
         if (json.data.length > 0) {
           const newlyActiveId = await syncServerPlans(json.data)
-          if (newlyActiveId) getPlanWithDays(newlyActiveId).then(setPlan)
-        }
-        if (!json.data.some(p => p.isActive)) {
+          if (newlyActiveId) {
+            getPlanWithDays(newlyActiveId).then(setPlan)
+          } else {
+            // Plan already synced — always load active from local DB
+            const localActive = await getActivePlan()
+            if (localActive) getPlanWithDays(localActive.id).then(setPlan)
+          }
+        } else {
           const localActive = await getActivePlan()
           if (localActive) getPlanWithDays(localActive.id).then(setPlan)
         }
@@ -893,7 +898,7 @@ export default function Dashboard() {
           </button>
         ) : (
           <button className="btn btn-primary" style={{width:'100%'}} onClick={() => nav('/planner')}>
-            <Plus size={18}/> {t('dashboard.create_plan')}
+            <Plus size={18}/> {t('planner.create_plan')}
           </button>
         )}
       </div>

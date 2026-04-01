@@ -4,7 +4,7 @@ import { TrendingUp, Target, Dumbbell, Calendar, Activity, ChevronRight, X } fro
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceArea } from 'recharts'
-import { db, getBodyWeightHistory, getActivityCalendar, getExercisePR, mergeServerWeights } from '../db/index.js'
+import { db, getBodyWeightHistory, getActivityCalendar, getExercisePR, mergeServerWeights, mergeServerSessions } from '../db/index.js'
 import { allExercises } from '../lib/exercises.js'
 import { enqueue } from '../db/sync-queue.js'
 import { useWeightUnit, toDisplay, toKg } from '../hooks/useWeightUnit.js'
@@ -409,6 +409,16 @@ export default function Progress() {
         await mergeServerWeights(json.data)
       },
       () => {}, // offline: skip merge, render from whatever is local
+    )
+
+    // Online-first: sync sessions so activity calendar and PRs reflect server data
+    await fetchWithFallback(
+      async () => {
+        const json = await api.get('/api/workouts/sessions?limit=500')
+        if (!json.success || !Array.isArray(json.data)) throw new Error('bad response')
+        await mergeServerSessions(json.data)
+      },
+      () => {},
     )
 
     const weights = await getBodyWeightHistory()

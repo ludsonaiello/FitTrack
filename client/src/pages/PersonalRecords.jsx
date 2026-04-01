@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trophy, ChevronRight, Search, X, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { getAllPRs } from '../db/index.js'
+import { getAllPRs, mergeServerSessions } from '../db/index.js'
 import { allExercises, FOCUS_LABELS, LEVEL_LABELS } from '../lib/exercises.js'
 import { useWeightUnit, toDisplay } from '../hooks/useWeightUnit.js'
+import { api, fetchWithFallback } from '../lib/api.js'
 
 const LEVEL_COLORS = {
   beginner:     { text: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
@@ -29,7 +30,17 @@ export default function PersonalRecords() {
   const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
-    getAllPRs().then(raw => {
+    async function load() {
+      // Online-first: sync sessions from server before reading PRs from local DB
+      await fetchWithFallback(
+        async () => {
+          const json = await api.get('/api/workouts/sessions?limit=500')
+          if (!json.success || !Array.isArray(json.data)) throw new Error('bad response')
+          await mergeServerSessions(json.data)
+        },
+        () => {}, // offline: skip merge, render from whatever is local
+      )
+      const raw = await getAllPRs()
       const enriched = raw
         .map(pr => {
           const info = allExercises.find(e => e.id === pr.tutorialId)
@@ -47,7 +58,8 @@ export default function PersonalRecords() {
         .filter(Boolean)
       setPRs(enriched)
       setLoading(false)
-    })
+    }
+    load()
   }, [unit])
 
   const focuses = useMemo(() => [...new Set(prs.flatMap(p => p.focusArea))].sort(), [prs])
